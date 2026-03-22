@@ -47,8 +47,16 @@ export async function PATCH(request: Request, { params }: Params) {
     .eq("id", id);
 
   if (error) {
+    const hint =
+      error.message?.includes("nfc_tag_id") || error.message?.includes("column")
+        ? " Supabase SQL Editor에서 'ALTER TABLE profiles ADD COLUMN IF NOT EXISTS nfc_tag_id text UNIQUE;' 실행이 필요할 수 있습니다."
+        : "";
     return NextResponse.json(
-      { ok: false, message: "NFC 등록에 실패했습니다.", error: error.message },
+      {
+        ok: false,
+        message: `NFC 등록에 실패했습니다.${hint}`,
+        error: error.message
+      },
       { status: 500 }
     );
   }

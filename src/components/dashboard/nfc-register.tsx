@@ -81,10 +81,19 @@ export default function NfcRegister({ students }: NfcRegisterProps) {
     try {
       const reader = new NDEFReader();
       reader.onreading = async (event: NDEFReadingEvent) => {
-        const serialNumber = event.serialNumber ?? "";
-        if (!serialNumber) {
+        let tagId = event.serialNumber ?? "";
+        const ev = event as unknown as { message?: { records?: Array<{ data?: DataView; id?: string }> } };
+        if (!tagId && ev?.message?.records?.length) {
+          const first = ev.message.records[0];
+          if (first?.id) tagId = `ndef:${first.id}`;
+          else if (first?.data) {
+            const arr = new Uint8Array(first.data.buffer, first.data.byteOffset, first.data.byteLength);
+            tagId = `ndef:${Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32)}`;
+          }
+        }
+        if (!tagId) {
           setStatus("error");
-          setMessage("태그에서 시리얼 번호를 읽을 수 없습니다.");
+          setMessage("이 NFC 태그는 식별할 수 없습니다. 다른 태그를 시도하거나, NDEF가 기록된 카드를 사용해보세요.");
           controller.abort();
           return;
         }
@@ -96,7 +105,7 @@ export default function NfcRegister({ students }: NfcRegisterProps) {
               "Content-Type": "application/json",
               ...(token && { Authorization: `Bearer ${token}` })
             },
-            body: JSON.stringify({ nfcTagId: serialNumber })
+            body: JSON.stringify({ nfcTagId: tagId })
           });
           const data = (await res.json()) as { ok: boolean; message?: string };
 
@@ -108,7 +117,7 @@ export default function NfcRegister({ students }: NfcRegisterProps) {
             router.refresh();
           } else {
             setStatus("error");
-            setMessage(data.message ?? "등록에 실패했습니다.");
+            setMessage((data as { message?: string; error?: string }).message ?? (data as { error?: string }).error ?? "등록에 실패했습니다.");
           }
         } catch {
           setStatus("error");
@@ -154,9 +163,21 @@ export default function NfcRegister({ students }: NfcRegisterProps) {
           }
         >
           <div className="mt-4 space-y-4">
-            {!supportsNfc && (
-              <p className="rounded-lg border border-amber-500/40 bg-amber-950/30 px-4 py-2 text-xs text-amber-200">
-                ⚠️ NFC는 Android Chrome(HTTPS)에서만 사용 가능합니다.
+            {!supportsNfc ? (
+              <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-xs text-amber-200">
+                <p className="font-semibold">⚠️ NFC 사용 조건</p>
+                <ul className="list-inside list-disc space-y-1">
+                  <li>Android 휴대폰 + Chrome 브라우저</li>
+                  <li>HTTPS 사이트 (배포된 주소로 접속)</li>
+                  <li>PC, iOS는 NFC를 지원하지 않습니다</li>
+                </ul>
+                <p className="mt-2 text-amber-300/90">
+                  NFC 등록: Android에서 사이트 접속 → 학생 선택 → NFC 스캔 → 카드/폰을 뒤쪽에 갖다 대세요.
+                </p>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-green-500/30 bg-green-950/20 px-4 py-2 text-xs text-green-200">
+                ✓ NFC 사용 가능 환경입니다. 태그를 휴대폰 뒤쪽에 갖다 대세요.
               </p>
             )}
             <div>

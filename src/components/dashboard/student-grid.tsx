@@ -70,14 +70,23 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
     try {
       const reader = new window.NDEFReader();
       reader.onreading = async (event: NDEFReadingEvent) => {
-        const serialNumber = event.serialNumber ?? "";
-        if (!serialNumber) {
-          showToast("태그를 읽을 수 없습니다.", "error");
+        let tagId = event.serialNumber ?? "";
+        const ev = event as unknown as { message?: { records?: Array<{ data?: DataView; id?: string }> } };
+        if (!tagId && ev?.message?.records?.length) {
+          const first = ev.message.records[0];
+          if (first?.id) tagId = `ndef:${first.id}`;
+          else if (first?.data) {
+            const arr = new Uint8Array(first.data.buffer, first.data.byteOffset, first.data.byteLength);
+            tagId = `ndef:${Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32)}`;
+          }
+        }
+        if (!tagId) {
+          showToast("이 태그는 식별할 수 없습니다.", "error");
           controller.abort();
           return;
         }
         try {
-          const res = await fetch(`/api/profiles/by-nfc?tagId=${encodeURIComponent(serialNumber)}`);
+          const res = await fetch(`/api/profiles/by-nfc?tagId=${encodeURIComponent(tagId)}`);
           const data = (await res.json()) as { ok: boolean; profile?: { id: string; name: string; balance: number } };
           if (data.ok && data.profile) {
             setLocalStudents((prev) => {

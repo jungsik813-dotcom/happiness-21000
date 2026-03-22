@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   const currentBalance = vault.central_balance ?? 0;
   if (currentBalance < amount) {
     return NextResponse.json(
-      { ok: false, message: `중앙 금고 잔액이 부족합니다. (현재 ${currentBalance} P)` },
+      { ok: false, message: `중앙 금고 잔액이 부족합니다. (현재 ${currentBalance} 클로버)` },
       { status: 400 }
     );
   }

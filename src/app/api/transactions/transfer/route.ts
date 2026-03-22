@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { insertTransaction } from "@/lib/transactions";
+import { checkTransferTimeLock, getTimeLockMessage } from "@/lib/time-lock";
 
 type TransferBody = {
   fromStudentId?: string;
   toStudentId?: string;
   toGoalId?: string;
   amount?: number;
+  praiseMessage?: string;
 };
 
 type ProfileRow = { id: string; balance: number | null; name: string | null };
@@ -18,6 +20,7 @@ export async function POST(request: Request) {
   const toStudentId = body.toStudentId?.trim() || null;
   const toGoalId = body.toGoalId?.trim() || null;
   const amount = Number(body.amount ?? 0);
+  const praiseMessage = typeof body.praiseMessage === "string" ? body.praiseMessage.trim() : "";
 
   const isP2P = Boolean(toStudentId);
   const isContribution = Boolean(toGoalId);
@@ -27,6 +30,23 @@ export async function POST(request: Request) {
       { ok: false, message: "보내는 학생, 받는 대상, 송금 금액을 확인해주세요." },
       { status: 400 }
     );
+  }
+
+  const timeLock = checkTransferTimeLock();
+  if (!timeLock.allowed) {
+    return NextResponse.json(
+      { ok: false, message: getTimeLockMessage(timeLock) },
+      { status: 400 }
+    );
+  }
+
+  if (isP2P) {
+    if (praiseMessage.length < 10) {
+      return NextResponse.json(
+        { ok: false, message: "칭찬 메시지를 10자 이상 입력해주세요." },
+        { status: 400 }
+      );
+    }
   }
 
   if (isP2P && fromStudentId === toStudentId) {
@@ -57,6 +77,19 @@ export async function POST(request: Request) {
       { ok: false, message: "잔액이 부족합니다." },
       { status: 400 }
     );
+  }
+
+  if (isP2P) {
+    const vaultRow = await supabase.from("vault").select("fair_mode").limit(1).maybeSingle<{ fair_mode: boolean | null }>();
+    const fairMode = vaultRow.data?.fair_mode ?? false;
+    const maxP2P = fairMode ? fromBalance : Math.floor(fromBalance * 0.1);
+    if (amount > maxP2P) {
+      const limitStr = fairMode ? "100%" : "10%";
+      return NextResponse.json(
+        { ok: false, message: `P2P 송금 한도는 잔액의 ${limitStr}입니다. (최대 ${maxP2P} 클로버)` },
+        { status: 400 }
+      );
+    }
   }
 
   let effectiveAmount = amount;
@@ -156,7 +189,7 @@ export async function POST(request: Request) {
       );
     }
 
-    memo = `${fromQuery.data.name ?? "이름 없음"} → ${toQuery.data.name ?? "이름 없음"}`;
+    memo = `${fromQuery.data.name ?? "이름 없음"} → ${toQuery.data.name ?? "이름 없음"} | 칭찬: ${praiseMessage}`;
   }
 
   const remainingBalance = fromBalance - effectiveAmount;

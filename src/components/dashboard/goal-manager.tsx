@@ -118,7 +118,7 @@ export default function GoalManager({ goals }: GoalManagerProps) {
                   className="flex items-center justify-between rounded-lg border border-white/10 bg-slate-800/50 px-3 py-2 text-sm"
                 >
                   <span className="text-white">
-                    {goal.name} ({goal.current_amount}/{goal.target_amount} P)
+                    {goal.name} ({goal.current_amount}/{goal.target_amount} 클로버)
                   </span>
                   <button
                     type="button"

@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   const remainingSupply = TOTAL_SUPPLY - issuanceTotal;
   if (remainingSupply <= 0) {
     return NextResponse.json(
-      { ok: false, message: "총 발행 한도(21,000 P)를 모두 사용했습니다. 더 이상 채굴할 수 없습니다." },
+      { ok: false, message: "총 발행 한도(21,000 클로버)를 모두 사용했습니다. 더 이상 클로버 씨앗 보상을 지급할 수 없습니다." },
       { status: 400 }
     );
   }
@@ -183,12 +183,12 @@ export async function POST(request: Request) {
     }
   }
 
-  // 2단계: 채굴 보상 균등 분배
+  // 2단계: 클로버 씨앗 보상 균등 분배
   const miningAmount = Math.min(calcMiningAmount(remainingSupply, issuanceCount), remainingSupply);
   if (miningAmount <= 0) {
     return NextResponse.json({
       ok: true,
-      message: `세금 징수 완료 (총 ${totalTax}P). 채굴 한도 소진으로 보상 지급 없음.`
+      message: `세금 징수 완료 (총 ${totalTax}클로버). 클로버 씨앗 한도 소진으로 보상 지급 없음.`
     });
   }
 
@@ -212,7 +212,7 @@ export async function POST(request: Request) {
 
     if (updateRes.error) {
       return NextResponse.json(
-        { ok: false, message: `채굴 보상 지급 실패 (${profile.name}): ${updateRes.error.message}` },
+        { ok: false, message: `클로버 씨앗 보상 지급 실패 (${profile.name}): ${updateRes.error.message}` },
         { status: 500 }
       );
     }
@@ -222,11 +222,11 @@ export async function POST(request: Request) {
       amount: perStudent,
       fromProfileId: null,
       toProfileId: profile.id,
-      memo: `채굴 보상 ${issuanceCount + 1}회차`
+      memo: `클로버 씨앗 보상 ${issuanceCount + 1}회차`
     });
     if (!txResult.ok) {
       return NextResponse.json(
-        { ok: false, message: "채굴 거래 기록 저장에 실패했습니다." },
+        { ok: false, message: "클로버 씨앗 거래 기록 저장에 실패했습니다." },
         { status: 500 }
       );
     }
@@ -252,7 +252,7 @@ export async function POST(request: Request) {
         fromProfileId: null,
         toProfileId: null,
         toGoalId: taxDestination.id,
-        memo: "채굴 나머지 → 펀딩"
+        memo: "클로버 씨앗 나머지 → 펀딩"
       });
     } else {
       const vaultBalance = vault.central_balance ?? 0;
@@ -266,7 +266,7 @@ export async function POST(request: Request) {
         amount: remainder,
         fromProfileId: null,
         toProfileId: null,
-        memo: "채굴 나머지 → 중앙 금고"
+        memo: "클로버 씨앗 나머지 → 중앙 금고"
       });
     }
   }
@@ -295,6 +295,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    message: `주간 실행 완료. 세금 ${totalTax}P 징수, 채굴 ${miningAmount}P 지급 (${profiles.length}명 균등, 1인당 ${perStudent}P). 누적 발행: ${newIssuanceTotal}/21,000 P`
+    message: `주간 실행 완료. 세금 ${totalTax}클로버 징수, 클로버 씨앗 보상 ${miningAmount}클로버 지급 (${profiles.length}명 균등, 1인당 ${perStudent}클로버). 누적 발행: ${newIssuanceTotal}/21,000 클로버`
   });
 }

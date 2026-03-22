@@ -1,8 +1,8 @@
 import MainHeader from "@/components/layout/main-header";
+import { CURRENCY } from "@/lib/constants";
 import StudentGrid from "@/components/dashboard/student-grid";
-import AdminSection from "@/components/dashboard/admin-section";
-import VaultTransfer from "@/components/dashboard/vault-transfer";
-import { AdminProvider } from "@/components/admin/admin-provider";
+import FundingGoalsDisplay from "@/components/dashboard/funding-goals-display";
+import PraiseTimeline from "@/components/dashboard/praise-timeline";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
@@ -16,6 +16,7 @@ type VaultRow = {
   central_balance: number | null;
   issuance_total: number | null;
   issuance_count: number | null;
+  fair_mode?: boolean | null;
 };
 
 type GoalRow = {
@@ -37,14 +38,14 @@ export default async function HomePage() {
     supabase.from("profiles").select("id, name, balance").order("name"),
     supabase
       .from("vault")
-      .select("central_balance, issuance_total, issuance_count")
+      .select("central_balance, issuance_total, issuance_count, fair_mode")
       .limit(1)
       .maybeSingle<VaultRow>(),
     supabase
       .from("goals")
       .select("id, name, target_amount, current_amount, is_active")
       .order("created_at", { ascending: false }),
-    supabase.from("transactions").select("from_profile_id, to_goal_id, amount, tx_type, type").limit(2000)
+    supabase.from("transactions").select("from_profile_id, to_profile_id, to_goal_id, amount, tx_type, type, memo, created_at").limit(2000)
   ]);
 
   const goalsRaw = Array.isArray(goalsQuery.data) ? goalsQuery.data : (goalsQuery.data ?? []);
@@ -56,7 +57,6 @@ export default async function HomePage() {
     })
   );
 
-  const vaultBalance = vaultQuery.data?.central_balance ?? 0;
   const issuanceTotal = Number(vaultQuery.data?.issuance_total ?? 0);
   const issuanceCount = Number(vaultQuery.data?.issuance_count ?? 0);
 
@@ -116,6 +116,29 @@ export default async function HomePage() {
     contributionsByGoal.entries()
   ) as Record<string, { total: number; byPerson: Array<{ id: string; name: string; amount: number; percent: number }> }>;
 
+  const praiseTimelineItems = contributionRows
+    .filter((row) => (row.tx_type ?? row.type ?? "") === "transfer")
+    .map((row) => {
+      const fromId = typeof row.from_profile_id === "string" ? row.from_profile_id : null;
+      const toId = typeof row.to_profile_id === "string" ? row.to_profile_id : null;
+      const memo = typeof row.memo === "string" ? row.memo : "";
+      const created = typeof row.created_at === "string" ? row.created_at : null;
+      const amount = Number(row.amount) || 0;
+      const praise = memo.includes("칭찬: ") ? memo.split("칭찬: ")[1]?.trim() ?? memo : memo;
+      return {
+        fromName: fromId ? profileMap.get(fromId) ?? "알 수 없음" : "알 수 없음",
+        toName: toId ? profileMap.get(toId) ?? "알 수 없음" : "알 수 없음",
+        amount,
+        praise: praise || "-",
+        createdAt: created
+      };
+    })
+    .sort((a, b) => {
+      if (!a.createdAt) return 1;
+      if (!b.createdAt) return -1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
   const burnedByGoal = new Map<string, number>();
   for (const row of contributionRows) {
     const txType = (row.tx_type ?? row.type ?? "") as string;
@@ -126,29 +149,33 @@ export default async function HomePage() {
     if (amount <= 0) continue;
     burnedByGoal.set(toGoalId, (burnedByGoal.get(toGoalId) ?? 0) + amount);
   }
+  const totalBurned = [...burnedByGoal.values()].reduce((a, b) => a + b, 0);
+  const circulating = Math.max(0, issuanceTotal - totalBurned);
 
   const hasError = Boolean(profilesQuery.error || vaultQuery.error);
+  const errorDetails: string[] = [];
+  if (profilesQuery.error) errorDetails.push(`profiles: ${profilesQuery.error.message}`);
+  if (vaultQuery.error) errorDetails.push(`vault: ${vaultQuery.error.message}`);
 
   return (
-    <AdminProvider>
-      <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
-        <MainHeader />
+    <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
+      <MainHeader />
 
       <section className="mb-8 rounded-2xl border border-orange-400/40 bg-slate-900/80 p-6 shadow-[0_0_32px_rgba(247,147,26,0.15)]">
         <p className="text-xs uppercase tracking-[0.2em] text-orange-300">
-          21,000 행복 중앙 금고
+          누적 발행
         </p>
         <p className="mt-2 text-3xl font-extrabold text-orange-400 md:text-5xl">
-          누적 발행: {toWon(issuanceTotal)} / 21,000 P ({issuanceCount}회차)
+          {toWon(issuanceTotal)} / 21,000 {CURRENCY} ({issuanceCount}회차)
         </p>
         <p className="mt-2 text-sm text-gray-400">
-          중앙 금고 잔액 {toWon(vaultBalance)} P · 오늘의 학급 경제 총예산을 한눈에 확인하세요.
+          학급 클로버 총발행량을 한눈에 확인하세요.
         </p>
-        <VaultTransfer
-          vaultBalance={vaultBalance}
-          profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
-          goals={goals.map((g) => ({ id: g.id, name: g.name, is_active: g.is_active }))}
-        />
+        <p className="mt-3 rounded-lg border border-white/10 bg-slate-800/50 px-4 py-2 text-sm">
+          <span className="text-gray-400">현재 유통중:</span>{" "}
+          <span className="font-bold text-orange-400">{toWon(circulating)} {CURRENCY}</span>
+          <span className="ml-2 text-xs text-gray-500">(누적 발행 − 소각)</span>
+        </p>
         <Link
           href="/transactions"
           className="mt-4 inline-block rounded-md border border-orange-400/50 px-4 py-2 text-sm font-semibold text-orange-300 transition hover:bg-orange-500/10"
@@ -157,21 +184,30 @@ export default async function HomePage() {
         </Link>
       </section>
 
-      <AdminSection
+      <FundingGoalsDisplay
         goals={goals}
-        students={profiles.map((p) => ({ id: p.id, name: p.name }))}
         contributions={contributions}
         burnedByGoal={Object.fromEntries(burnedByGoal.entries())}
       />
 
+      <PraiseTimeline items={praiseTimelineItems} />
+
       {hasError ? (
         <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
-          데이터 로딩 중 오류가 발생했습니다. Supabase 테이블/권한 설정을 확인해주세요.
+          <p className="font-semibold">데이터 로딩 중 오류가 발생했습니다.</p>
+          {errorDetails.length > 0 && (
+            <p className="mt-1 text-xs text-red-300">{errorDetails.join(" · ")}</p>
+          )}
+          <p className="mt-3 text-xs">
+            Supabase 대시보드에서 <strong>profiles</strong>, <strong>vault</strong> 테이블이 있고
+            RLS로 anon의 SELECT가 허용되어야 합니다.{" "}
+            <code className="rounded bg-slate-800 px-1">supabase/migrations/</code>의
+            <strong> 000_init.sql → 001~004</strong>를 SQL Editor에서 순서대로 실행하세요.
+          </p>
         </section>
       ) : (
         <StudentGrid students={profiles} goals={goals} />
       )}
-      </main>
-    </AdminProvider>
+    </main>
   );
 }

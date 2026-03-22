@@ -42,7 +42,7 @@ export default function VaultTransfer({ vaultBalance, profiles, goals }: VaultTr
       return;
     }
     if (amt > vaultBalance) {
-      setMessage({ text: `잔액이 부족합니다. (현재 ${toWon(vaultBalance)} P)`, isError: true });
+      setMessage({ text: `잔액이 부족합니다. (현재 ${toWon(vaultBalance)} 클로버)`, isError: true });
       return;
     }
 
@@ -103,7 +103,7 @@ export default function VaultTransfer({ vaultBalance, profiles, goals }: VaultTr
         {expanded && (
           <div className="mt-3 space-y-3 rounded-lg border border-orange-400/20 bg-slate-900/50 p-4">
             <p className="text-xs text-gray-400">
-              잔액: <span className="font-semibold text-orange-400">{toWon(vaultBalance)} P</span>
+              잔액: <span className="font-semibold text-orange-400">{toWon(vaultBalance)} 클로버</span>
             </p>
             <div>
               <label className="mb-1 block text-xs text-gray-400">받는 대상</label>
@@ -124,7 +124,7 @@ export default function VaultTransfer({ vaultBalance, profiles, goals }: VaultTr
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-gray-400">송금 금액 (P)</label>
+              <label className="mb-1 block text-xs text-gray-400">송금 금액 (클로버)</label>
               <input
                 type="number"
                 min={1}

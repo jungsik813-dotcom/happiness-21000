@@ -1,9 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useAdmin } from "@/components/admin/admin-provider";
-import AdminGate from "@/components/admin/admin-gate";
 import { CURRENCY } from "@/lib/constants";
 
 export type Goal = {
@@ -23,7 +20,7 @@ function toWon(value: number) {
   return new Intl.NumberFormat("ko-KR").format(value);
 }
 
-type FundingSectionProps = {
+type FundingGoalsDisplayProps = {
   goals: Goal[];
   contributions?: Record<string, GoalContributions>;
   burnedByGoal?: Record<string, number>;
@@ -38,9 +35,7 @@ function ContributionList({
 }) {
   const list = contributions?.byPerson ?? [];
   if (list.length === 0) {
-    return (
-      <p className="text-xs text-gray-500">아직 학생 기부가 없습니다.</p>
-    );
+    return <p className="text-xs text-gray-500">아직 학생 기부가 없습니다.</p>;
   }
   return (
     <ul className={compact ? "space-y-0.5" : "mt-2 space-y-1"}>
@@ -59,77 +54,21 @@ function ContributionList({
   );
 }
 
-function WeeklyButton() {
-  const router = useRouter();
-  const { token, logout } = useAdmin();
-  const [isWeeklyLoading, setIsWeeklyLoading] = useState(false);
-
-  async function handleWeekly() {
-    setIsWeeklyLoading(true);
-    try {
-      const res = await fetch("/api/admin/weekly", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token && { Authorization: `Bearer ${token}` })
-        }
-      });
-      const data = (await res.json()) as { ok: boolean; message: string };
-      if (data.ok) {
-        alert(data.message);
-        logout();
-        router.refresh();
-      } else {
-        alert(data.message || "주간 실행에 실패했습니다.");
-      }
-    } catch {
-      alert("주간 실행 중 오류가 발생했습니다.");
-    } finally {
-      setIsWeeklyLoading(false);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleWeekly}
-      disabled={isWeeklyLoading}
-      className="rounded-lg border border-orange-400/60 bg-orange-500/20 px-4 py-2 text-sm font-semibold text-orange-300 transition hover:bg-orange-500/30 disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {isWeeklyLoading ? "주간 실행 중..." : "주간 실행 (세금 3% + 클로버 씨앗 보상)"}
-    </button>
-  );
-}
-
-export default function FundingSection({
+export default function FundingGoalsDisplay({
   goals,
   contributions = {},
   burnedByGoal = {}
-}: FundingSectionProps) {
+}: FundingGoalsDisplayProps) {
   const activeGoals = goals.filter((g) => g.is_active);
   const completedGoals = goals.filter((g) => !g.is_active);
 
   return (
     <section className="mb-8 space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-bold text-white">펀딩 목표</h2>
-        <AdminGate
-          fallback={
-            <button
-              type="button"
-              className="rounded-lg border border-orange-400/40 bg-orange-500/10 px-4 py-2 text-sm font-semibold text-orange-300/80 transition hover:bg-orange-500/20"
-            >
-              🔒 주간 실행 (관리자 전용)
-            </button>
-          }
-        >
-          <WeeklyButton />
-        </AdminGate>
-      </div>
+      <h2 className="text-xl font-bold text-white">펀딩 목표</h2>
 
       {activeGoals.length === 0 ? (
         <p className="rounded-xl border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-gray-400">
-          활성 펀딩 목표가 없습니다. 아래에서 새 목표를 만들면 세금과 클로버 씨앗 나머지가 적립됩니다.
+          진행 중인 펀딩 목표가 없습니다.
         </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -177,7 +116,9 @@ function ActiveGoalCard({
       <p className="text-sm font-semibold text-orange-300">{goal.name}</p>
       <p className="mt-2 text-2xl font-extrabold text-orange-400">
         {toWon(goal.current_amount)}{" "}
-        <span className="text-lg font-normal text-gray-400">/ {toWon(goal.target_amount)} {CURRENCY}</span>
+        <span className="text-lg font-normal text-gray-400">
+          / {toWon(goal.target_amount)} {CURRENCY}
+        </span>
       </p>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
         <div
@@ -233,9 +174,7 @@ function CompletedGoalCard({
           <p className="text-sm font-semibold text-amber-400">
             🔥 소각: {toWon(burnedAmount!)} {CURRENCY}
           </p>
-          <p className="text-xs text-gray-400">
-            펀딩 완료로 유통에서 제거되었습니다.
-          </p>
+          <p className="text-xs text-gray-400">펀딩 완료로 유통에서 제거되었습니다.</p>
         </div>
       )}
       <div className="mt-3 border-t border-white/10 pt-3">

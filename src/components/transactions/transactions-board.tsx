@@ -1,6 +1,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { CURRENCY } from "@/lib/constants";
+
+const TX_TYPE_LABELS: Record<string, string> = {
+  transfer: "송금",
+  contribution: "펀딩 기부",
+  burn: "소각",
+  mining: "클로버 씨앗 보상",
+  tax: "세금",
+  tax_deposit: "세금 적립",
+  mining_remainder: "클로버 씨앗 나머지",
+  vault_transfer: "중앙 금고 송금",
+  etc: "기타"
+};
+
+function getTxTypeLabel(txType: string): string {
+  return TX_TYPE_LABELS[txType] ?? txType;
+}
 
 type TransactionItem = {
   id: string;
@@ -71,10 +88,10 @@ export default function TransactionsBoard({ transactions }: TransactionsBoardPro
             <option value="transfer">송금</option>
             <option value="contribution">펀딩 기부</option>
             <option value="burn">소각</option>
-            <option value="mining">채굴 보상</option>
+            <option value="mining">클로버 씨앗 보상</option>
             <option value="tax">세금</option>
             <option value="tax_deposit">세금 적립</option>
-            <option value="mining_remainder">채굴 나머지</option>
+            <option value="mining_remainder">클로버 씨앗 나머지</option>
             <option value="vault_transfer">중앙 금고 송금</option>
             <option value="etc">기타</option>
           </select>
@@ -104,9 +121,9 @@ export default function TransactionsBoard({ transactions }: TransactionsBoardPro
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.16em] text-orange-300">
-                  {item.txType}
+                  {getTxTypeLabel(item.txType)}
                 </p>
-                <p className="mt-1 text-lg font-bold text-orange-400">{toWon(item.amount)} P</p>
+                <p className="mt-1 text-lg font-bold text-orange-400">{toWon(item.amount)} {CURRENCY}</p>
               </div>
               <p className="text-xs text-gray-400">{formatDate(item.createdAt)}</p>
             </div>

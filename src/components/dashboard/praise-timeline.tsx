@@ -70,7 +70,9 @@ export default function PraiseTimeline({ items }: PraiseTimelineProps) {
                 {formatDate(item.createdAt)}
               </span>
             </div>
-            <p className="mt-2 text-base text-white">"{item.praise}"</p>
+            <p className="mt-2 text-base text-white">
+              &ldquo;{item.praise}&rdquo;
+            </p>
             <p className="mt-1 text-sm font-bold text-orange-300">
               {toWon(item.amount)} {CURRENCY}
             </p>

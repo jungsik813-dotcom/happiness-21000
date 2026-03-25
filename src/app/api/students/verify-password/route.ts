@@ -1,19 +1,24 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { verifyStudentPassword } from "@/lib/student-auth";
+import { readJsonObject } from "@/lib/safe-json";
+import { isUuid } from "@/lib/validation";
 
 type ProfileRow = { id: string; name: string | null; balance: number | null; password_hash: string | null };
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { studentId?: string; password?: string };
-  const studentId = body.studentId?.trim();
+  const parsed = await readJsonObject(request);
+  if (!parsed.ok) return parsed.response;
+
+  const body = parsed.data as { studentId?: string; password?: string };
+  const studentId = body.studentId?.trim() ?? "";
   const password = body.password?.trim() ?? "";
 
-  if (!studentId) {
+  if (!studentId || !isUuid(studentId)) {
     return NextResponse.json({ ok: false, message: "학생 정보가 필요합니다." }, { status: 400 });
   }
 
-  if (password.length < 4) {
+  if (password.length !== 4) {
     return NextResponse.json({ ok: false, message: "4자리 비밀번호를 입력해주세요." }, { status: 400 });
   }
 

@@ -4,7 +4,17 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAdmin } from "@/components/admin/admin-provider";
 import AdminGate from "@/components/admin/admin-gate";
-import { CURRENCY } from "@/lib/constants";
+import { CURRENCY, WEALTH_TAX_RATE } from "@/lib/constants";
+
+const WEALTH_TAX_PCT = Math.round(WEALTH_TAX_RATE * 100);
+import {
+  ContributionRankList,
+  contributorRankButtonSuffix,
+  sortGoalsByStudentContributionTotal
+} from "@/components/dashboard/contribution-rank-list";
+
+/** 관리자 펀딩 화면에서는 학생 전원 순위 표시 (학급 인원수 제한 없음) */
+const ADMIN_RANK_ROWS = Number.POSITIVE_INFINITY;
 
 export type Goal = {
   id: string;
@@ -28,36 +38,6 @@ type FundingSectionProps = {
   contributions?: Record<string, GoalContributions>;
   burnedByGoal?: Record<string, number>;
 };
-
-function ContributionList({
-  contributions,
-  compact = false
-}: {
-  contributions: GoalContributions;
-  compact?: boolean;
-}) {
-  const list = contributions?.byPerson ?? [];
-  if (list.length === 0) {
-    return (
-      <p className="text-xs text-gray-500">아직 학생 기부가 없습니다.</p>
-    );
-  }
-  return (
-    <ul className={compact ? "space-y-0.5" : "mt-2 space-y-1"}>
-      {list.map((p) => (
-        <li
-          key={p.id}
-          className={`flex items-center justify-between ${compact ? "text-xs" : "text-sm"}`}
-        >
-          <span className="text-gray-300">{p.name}</span>
-          <span className="font-medium text-orange-400">
-            {toWon(p.amount)} {CURRENCY} ({p.percent.toFixed(1)}%)
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 function WeeklyButton() {
   const router = useRouter();
@@ -96,7 +76,9 @@ function WeeklyButton() {
       disabled={isWeeklyLoading}
       className="rounded-lg border border-orange-400/60 bg-orange-500/20 px-4 py-2 text-sm font-semibold text-orange-300 transition hover:bg-orange-500/30 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {isWeeklyLoading ? "주간 실행 중..." : "주간 실행 (세금 3% + 클로버 씨앗 보상)"}
+      {isWeeklyLoading
+        ? "주간 실행 중..."
+        : `주간 실행 (보유세 ${WEALTH_TAX_PCT}% + 클로버 씨앗 보상)`}
     </button>
   );
 }
@@ -106,8 +88,14 @@ export default function FundingSection({
   contributions = {},
   burnedByGoal = {}
 }: FundingSectionProps) {
-  const activeGoals = goals.filter((g) => g.is_active);
-  const completedGoals = goals.filter((g) => !g.is_active);
+  const activeGoals = sortGoalsByStudentContributionTotal(
+    goals.filter((g) => g.is_active),
+    contributions
+  );
+  const completedGoals = sortGoalsByStudentContributionTotal(
+    goals.filter((g) => !g.is_active),
+    contributions
+  );
 
   return (
     <section className="mb-8 space-y-6">
@@ -129,7 +117,7 @@ export default function FundingSection({
 
       {activeGoals.length === 0 ? (
         <p className="rounded-xl border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-gray-400">
-          활성 펀딩 목표가 없습니다. 아래에서 새 목표를 만들면 세금과 클로버 씨앗 나머지가 적립됩니다.
+          활성 펀딩 목표가 없습니다. 아래에서 새 목표를 만들면 보유세({WEALTH_TAX_PCT}%)와 클로버 씨앗 나머지가 적립됩니다.
         </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -193,11 +181,18 @@ function ActiveGoalCard({
           onClick={() => setShowContributors(!showContributors)}
           className="flex w-full items-center justify-between text-left text-xs font-medium text-orange-300/90 hover:text-orange-300"
         >
-          기여자 보기 {contributions?.byPerson?.length ? `(${contributions.byPerson.length}명)` : ""}
+          기부 랭킹
+          {contributions?.byPerson?.length
+            ? contributorRankButtonSuffix(contributions.byPerson.length, ADMIN_RANK_ROWS)
+            : ""}
           <span className="text-gray-500">{showContributors ? "▲" : "▼"}</span>
         </button>
         {showContributors && contributions ? (
-          <ContributionList contributions={contributions} compact />
+          <ContributionRankList
+            byPerson={contributions.byPerson}
+            compact
+            maxRows={ADMIN_RANK_ROWS}
+          />
         ) : showContributors ? (
           <p className="mt-1 text-xs text-gray-500">아직 학생 기부가 없습니다.</p>
         ) : null}
@@ -239,9 +234,9 @@ function CompletedGoalCard({
         </div>
       )}
       <div className="mt-3 border-t border-white/10 pt-3">
-        <p className="mb-2 text-xs font-medium text-gray-400">기여 현황</p>
+        <p className="mb-2 text-xs font-medium text-gray-400">기부 랭킹 (전체)</p>
         {contributions ? (
-          <ContributionList contributions={contributions} />
+          <ContributionRankList byPerson={contributions.byPerson} maxRows={ADMIN_RANK_ROWS} />
         ) : (
           <p className="text-xs text-gray-500">기여 데이터가 없습니다.</p>
         )}

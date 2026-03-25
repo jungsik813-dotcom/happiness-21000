@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAdminTokenFromRequest, verifyAdminToken } from "@/lib/admin-auth";
+import { readJsonObject } from "@/lib/safe-json";
 
 type GoalRow = {
   id: string;
@@ -40,7 +41,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = (await request.json()) as CreateBody;
+  const parsed = await readJsonObject(request);
+  if (!parsed.ok) return parsed.response;
+
+  const body = parsed.data as CreateBody;
   const name = body.name?.trim();
   const targetAmount = Number(body.targetAmount ?? 0);
 

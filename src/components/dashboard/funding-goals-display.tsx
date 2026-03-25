@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { CURRENCY } from "@/lib/constants";
+import {
+  ContributionRankList,
+  contributorRankButtonSuffix,
+  sortGoalsByStudentContributionTotal
+} from "@/components/dashboard/contribution-rank-list";
 
 export type Goal = {
   id: string;
@@ -26,41 +31,19 @@ type FundingGoalsDisplayProps = {
   burnedByGoal?: Record<string, number>;
 };
 
-function ContributionList({
-  contributions,
-  compact = false
-}: {
-  contributions: GoalContributions;
-  compact?: boolean;
-}) {
-  const list = contributions?.byPerson ?? [];
-  if (list.length === 0) {
-    return <p className="text-xs text-gray-500">아직 학생 기부가 없습니다.</p>;
-  }
-  return (
-    <ul className={compact ? "space-y-0.5" : "mt-2 space-y-1"}>
-      {list.map((p) => (
-        <li
-          key={p.id}
-          className={`flex items-center justify-between ${compact ? "text-xs" : "text-sm"}`}
-        >
-          <span className="text-gray-300">{p.name}</span>
-          <span className="font-medium text-orange-400">
-            {toWon(p.amount)} {CURRENCY} ({p.percent.toFixed(1)}%)
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 export default function FundingGoalsDisplay({
   goals,
   contributions = {},
   burnedByGoal = {}
 }: FundingGoalsDisplayProps) {
-  const activeGoals = goals.filter((g) => g.is_active);
-  const completedGoals = goals.filter((g) => !g.is_active);
+  const activeGoals = sortGoalsByStudentContributionTotal(
+    goals.filter((g) => g.is_active),
+    contributions
+  );
+  const completedGoals = sortGoalsByStudentContributionTotal(
+    goals.filter((g) => !g.is_active),
+    contributions
+  );
 
   return (
     <section className="mb-8 space-y-6">
@@ -134,11 +117,14 @@ function ActiveGoalCard({
           onClick={() => setShowContributors(!showContributors)}
           className="flex w-full items-center justify-between text-left text-xs font-medium text-orange-300/90 hover:text-orange-300"
         >
-          기여자 보기 {contributions?.byPerson?.length ? `(${contributions.byPerson.length}명)` : ""}
+          기부 랭킹
+          {contributions?.byPerson?.length
+            ? contributorRankButtonSuffix(contributions.byPerson.length)
+            : ""}
           <span className="text-gray-500">{showContributors ? "▲" : "▼"}</span>
         </button>
         {showContributors && contributions ? (
-          <ContributionList contributions={contributions} compact />
+          <ContributionRankList byPerson={contributions.byPerson} compact />
         ) : showContributors ? (
           <p className="mt-1 text-xs text-gray-500">아직 학생 기부가 없습니다.</p>
         ) : null}
@@ -178,9 +164,9 @@ function CompletedGoalCard({
         </div>
       )}
       <div className="mt-3 border-t border-white/10 pt-3">
-        <p className="mb-2 text-xs font-medium text-gray-400">기여 현황</p>
+        <p className="mb-2 text-xs font-medium text-gray-400">기부 랭킹 (상위 10명)</p>
         {contributions ? (
-          <ContributionList contributions={contributions} />
+          <ContributionRankList byPerson={contributions.byPerson} />
         ) : (
           <p className="text-xs text-gray-500">기여 데이터가 없습니다.</p>
         )}

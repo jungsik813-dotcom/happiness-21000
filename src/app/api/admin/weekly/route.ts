@@ -2,8 +2,15 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { insertTransaction } from "@/lib/transactions";
 import { getAdminTokenFromRequest, verifyAdminToken } from "@/lib/admin-auth";
+import {
+  getWeeklyIssuanceCap,
+  OPERATING_WEEKS,
+  TOTAL_SUPPLY
+} from "@/lib/issuance-schedule";
+import { WEALTH_TAX_RATE } from "@/lib/constants";
+import { splitGoalFunding } from "@/lib/goal-funding";
 
-const TOTAL_SUPPLY = 21_000;
+const WEALTH_TAX_PERCENT_LABEL = `${Math.round(WEALTH_TAX_RATE * 100)}%`;
 
 type ProfileRow = { id: string; name: string | null; balance: number | null };
 type VaultRow = {
@@ -12,13 +19,7 @@ type VaultRow = {
   issuance_total: number | null;
   issuance_count: number | null;
 };
-type GoalRow = { id: string; name: string; current_amount: number };
-
-function calcMiningAmount(remaining: number, count: number): number {
-  if (remaining <= 0) return 0;
-  const rate = count < 4 ? 0.2 : 0.1;
-  return Math.floor(remaining * rate);
-}
+type GoalRow = { id: string; name: string; current_amount: number; target_amount: number };
 
 export async function POST(request: Request) {
   const token = getAdminTokenFromRequest(request);
@@ -29,12 +30,13 @@ export async function POST(request: Request) {
     );
   }
 
+  try {
   const supabase = await createSupabaseServerClient();
 
   const [profilesRes, vaultRes, activeGoalRes] = await Promise.all([
     supabase.from("profiles").select("id, name, balance").order("name"),
     supabase.from("vault").select("id, central_balance, issuance_total, issuance_count").limit(1).single<VaultRow>(),
-    supabase.from("goals").select("id, name, current_amount").eq("is_active", true).limit(1).maybeSingle<GoalRow>()
+    supabase.from("goals").select("id, name, current_amount, target_amount").eq("is_active", true).limit(1).maybeSingle<GoalRow>()
   ]);
 
   if (profilesRes.error || !profilesRes.data) {
@@ -63,6 +65,7 @@ export async function POST(request: Request) {
     issuanceTotal = Number(vault.issuance_total ?? 0);
     issuanceCount = Number(vault.issuance_count ?? 0);
   }
+  let vaultBalance = vault.central_balance ?? 0;
   const activeGoal = activeGoalRes.data;
 
   if (profiles.length === 0) {
@@ -80,13 +83,26 @@ export async function POST(request: Request) {
     );
   }
 
-  // 1단계: 3% 세금 징수 → 활성 펀딩 목표
+  if (issuanceCount >= OPERATING_WEEKS) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `운영 기간(${OPERATING_WEEKS}주)이 종료되어 더 이상 주간 발행을 할 수 없습니다.`
+      },
+      { status: 400 }
+    );
+  }
+
+  const nextWeek = issuanceCount + 1;
+  const weeklyIssuanceCap = getWeeklyIssuanceCap(nextWeek);
+
+  // 1단계: 보유세 징수 → 활성 펀딩 목표 또는 중앙 금고
   let totalTax = 0;
   const taxDestination = activeGoal ?? null;
 
   for (const profile of profiles) {
     const balance = profile.balance ?? 0;
-    const tax = Math.floor(balance * 0.03);
+    const tax = Math.floor(balance * WEALTH_TAX_RATE);
     if (tax <= 0) continue;
 
     const newBalance = balance - tax;
@@ -110,7 +126,7 @@ export async function POST(request: Request) {
       fromProfileId: profile.id,
       toProfileId: null,
       toGoalId: taxDestination?.id ?? null,
-      memo: `${profile.name ?? "이름 없음"} 세금 3%`
+      memo: `${profile.name ?? "이름 없음"} 보유세 ${WEALTH_TAX_PERCENT_LABEL}`
     });
 
     if (!txResult.ok) {
@@ -126,36 +142,122 @@ export async function POST(request: Request) {
   }
 
   if (totalTax > 0 && taxDestination) {
-    const newGoalAmount = (taxDestination.current_amount ?? 0) + totalTax;
-    const goalUpdate = await supabase
+    const goalFresh = await supabase
       .from("goals")
-      .update({ current_amount: newGoalAmount })
-      .eq("id", taxDestination.id);
+      .select("id, name, current_amount, target_amount")
+      .eq("id", taxDestination.id)
+      .single<GoalRow>();
 
-    if (goalUpdate.error) {
+    if (goalFresh.error || !goalFresh.data) {
       return NextResponse.json(
-        { ok: false, message: `펀딩 목표 적립 실패: ${goalUpdate.error.message}. goals 테이블이 있나요?` },
+        {
+          ok: false,
+          message: `활성 펀딩 목표를 다시 읽지 못했습니다: ${goalFresh.error?.message ?? ""}`
+        },
         { status: 500 }
       );
     }
 
-    const txDeposit = await insertTransaction(supabase, {
-      txType: "tax_deposit",
-      amount: totalTax,
-      fromProfileId: null,
-      toProfileId: null,
-      toGoalId: taxDestination.id,
-      memo: "세금 징수 → 펀딩 목표 적립"
-    });
-    if (!txDeposit.ok) {
-      return NextResponse.json(
-        { ok: false, message: "세금 적립 거래 기록 저장에 실패했습니다." },
-        { status: 500 }
-      );
+    const g = goalFresh.data;
+    const current = g.current_amount ?? 0;
+    const target = g.target_amount ?? 0;
+    const split = splitGoalFunding(current, target, totalTax);
+
+    if (split.needsStaleCompletion) {
+      if (current > 0) {
+        await insertTransaction(supabase, {
+          txType: "burn",
+          amount: current,
+          fromProfileId: null,
+          toProfileId: null,
+          toGoalId: g.id,
+          memo: `소각: ${g.name} 펀딩 완료(정리·세금)`
+        });
+      }
+      const staleClose = await supabase
+        .from("goals")
+        .update({ is_active: false, current_amount: 0 })
+        .eq("id", g.id);
+      if (staleClose.error) {
+        return NextResponse.json(
+          { ok: false, message: `펀딩 목표 정리 실패: ${staleClose.error.message}` },
+          { status: 500 }
+        );
+      }
+    } else if (split.toGoal > 0) {
+      if (split.goalReached) {
+        const goalClose = await supabase
+          .from("goals")
+          .update({ is_active: false, current_amount: 0 })
+          .eq("id", g.id);
+        if (goalClose.error) {
+          return NextResponse.json(
+            { ok: false, message: `펀딩 목표 적립 실패: ${goalClose.error.message}` },
+            { status: 500 }
+          );
+        }
+        await insertTransaction(supabase, {
+          txType: "burn",
+          amount: split.newGoalTotal,
+          fromProfileId: null,
+          toProfileId: null,
+          toGoalId: g.id,
+          memo: `소각: ${g.name} 펀딩 완료`
+        });
+      } else {
+        const goalUpdate = await supabase
+          .from("goals")
+          .update({ current_amount: split.newGoalTotal })
+          .eq("id", g.id);
+        if (goalUpdate.error) {
+          return NextResponse.json(
+            { ok: false, message: `펀딩 목표 적립 실패: ${goalUpdate.error.message}. goals 테이블이 있나요?` },
+            { status: 500 }
+          );
+        }
+      }
+    }
+
+    if (split.toVault > 0) {
+      vaultBalance += split.toVault;
+      const vaultOv = await supabase
+        .from("vault")
+        .update({ central_balance: vaultBalance })
+        .eq("id", vault.id);
+      if (vaultOv.error) {
+        return NextResponse.json(
+          { ok: false, message: "세금 초과분을 중앙 금고에 넣는 데 실패했습니다." },
+          { status: 500 }
+        );
+      }
+      await insertTransaction(supabase, {
+        txType: "funding_overflow",
+        amount: split.toVault,
+        fromProfileId: null,
+        toProfileId: null,
+        toGoalId: null,
+        memo: `세금 → 펀딩 초과분 중앙 금고 (${g.name})`
+      });
+    }
+
+    if (split.toGoal > 0) {
+      const txDeposit = await insertTransaction(supabase, {
+        txType: "tax_deposit",
+        amount: split.toGoal,
+        fromProfileId: null,
+        toProfileId: null,
+        toGoalId: g.id,
+        memo: "세금 징수 → 펀딩 목표 적립"
+      });
+      if (!txDeposit.ok) {
+        return NextResponse.json(
+          { ok: false, message: "세금 적립 거래 기록 저장에 실패했습니다." },
+          { status: 500 }
+        );
+      }
     }
   } else if (totalTax > 0 && !taxDestination) {
     // 활성 펀딩 목표 없음 → 중앙 금고
-    const vaultBalance = vault.central_balance ?? 0;
     const vaultUpdate = await supabase
       .from("vault")
       .update({ central_balance: vaultBalance + totalTax })
@@ -181,14 +283,15 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+    vaultBalance += totalTax;
   }
 
-  // 2단계: 클로버 씨앗 보상 균등 분배
-  const miningAmount = Math.min(calcMiningAmount(remainingSupply, issuanceCount), remainingSupply);
+  // 2단계: 클로버 씨앗 보상 균등 분배 (계단식 주간 한도)
+  const miningAmount = Math.min(weeklyIssuanceCap, remainingSupply);
   if (miningAmount <= 0) {
     return NextResponse.json({
       ok: true,
-      message: `세금 징수 완료 (총 ${totalTax}클로버). 클로버 씨앗 한도 소진으로 보상 지급 없음.`
+      message: `보유세(${WEALTH_TAX_PERCENT_LABEL}) 징수 완료 (총 ${totalTax}클로버). 클로버 씨앗 한도 소진으로 보상 지급 없음.`
     });
   }
 
@@ -232,34 +335,121 @@ export async function POST(request: Request) {
     }
   }
 
-  // 나머지 → 활성 펀딩 또는 중앙 금고
+  // 나머지 → 활성 펀딩(목표 초과분은 금고) 또는 중앙 금고
   if (remainder > 0) {
-    if (taxDestination) {
-      const goalRes = await supabase
-        .from("goals")
-        .select("current_amount")
-        .eq("id", taxDestination.id)
-        .single<{ current_amount: number }>();
-      const current = goalRes.data?.current_amount ?? taxDestination.current_amount ?? 0;
-      await supabase
-        .from("goals")
-        .update({ current_amount: current + remainder })
-        .eq("id", taxDestination.id);
+    const activeNow = await supabase
+      .from("goals")
+      .select("id, name, current_amount, target_amount")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle<GoalRow>();
 
-      await insertTransaction(supabase, {
-        txType: "mining_remainder",
-        amount: remainder,
-        fromProfileId: null,
-        toProfileId: null,
-        toGoalId: taxDestination.id,
-        memo: "클로버 씨앗 나머지 → 펀딩"
-      });
+    if (activeNow.data) {
+      const g = activeNow.data;
+      const current = g.current_amount ?? 0;
+      const target = g.target_amount ?? 0;
+      const split = splitGoalFunding(current, target, remainder);
+
+      if (split.needsStaleCompletion) {
+        if (current > 0) {
+          await insertTransaction(supabase, {
+            txType: "burn",
+            amount: current,
+            fromProfileId: null,
+            toProfileId: null,
+            toGoalId: g.id,
+            memo: `소각: ${g.name} 펀딩 완료(정리·씨앗 나머지)`
+          });
+        }
+        const staleClose = await supabase
+          .from("goals")
+          .update({ is_active: false, current_amount: 0 })
+          .eq("id", g.id);
+        if (staleClose.error) {
+          return NextResponse.json(
+            { ok: false, message: `펀딩 목표 정리 실패: ${staleClose.error.message}` },
+            { status: 500 }
+          );
+        }
+      } else if (split.toGoal > 0) {
+        if (split.goalReached) {
+          const goalClose = await supabase
+            .from("goals")
+            .update({ is_active: false, current_amount: 0 })
+            .eq("id", g.id);
+          if (goalClose.error) {
+            return NextResponse.json(
+              { ok: false, message: `펀딩 목표 적립 실패: ${goalClose.error.message}` },
+              { status: 500 }
+            );
+          }
+          await insertTransaction(supabase, {
+            txType: "burn",
+            amount: split.newGoalTotal,
+            fromProfileId: null,
+            toProfileId: null,
+            toGoalId: g.id,
+            memo: `소각: ${g.name} 펀딩 완료`
+          });
+        } else {
+          const goalUpdate = await supabase
+            .from("goals")
+            .update({ current_amount: split.newGoalTotal })
+            .eq("id", g.id);
+          if (goalUpdate.error) {
+            return NextResponse.json(
+              { ok: false, message: `펀딩 목표 적립 실패: ${goalUpdate.error.message}` },
+              { status: 500 }
+            );
+          }
+        }
+      }
+
+      if (split.toVault > 0) {
+        vaultBalance += split.toVault;
+        const vaultOv = await supabase
+          .from("vault")
+          .update({ central_balance: vaultBalance })
+          .eq("id", vault.id);
+        if (vaultOv.error) {
+          return NextResponse.json(
+            { ok: false, message: "씨앗 나머지 초과분을 중앙 금고에 넣는 데 실패했습니다." },
+            { status: 500 }
+          );
+        }
+        await insertTransaction(supabase, {
+          txType: "funding_overflow",
+          amount: split.toVault,
+          fromProfileId: null,
+          toProfileId: null,
+          toGoalId: null,
+          memo: `씨앗 나머지 초과분 → 중앙 금고 (${g.name})`
+        });
+      }
+
+      if (split.toGoal > 0) {
+        await insertTransaction(supabase, {
+          txType: "mining_remainder",
+          amount: split.toGoal,
+          fromProfileId: null,
+          toProfileId: null,
+          toGoalId: g.id,
+          memo: "클로버 씨앗 나머지 → 펀딩"
+        });
+      }
     } else {
-      const vaultBalance = vault.central_balance ?? 0;
-      await supabase
+      vaultBalance += remainder;
+      const vaultUpdate = await supabase
         .from("vault")
-        .update({ central_balance: vaultBalance + remainder })
+        .update({ central_balance: vaultBalance })
         .eq("id", vault.id);
+
+      if (vaultUpdate.error) {
+        return NextResponse.json(
+          { ok: false, message: "클로버 씨앗 나머지를 중앙 금고에 넣는 데 실패했습니다." },
+          { status: 500 }
+        );
+      }
 
       await insertTransaction(supabase, {
         txType: "mining_remainder",
@@ -295,6 +485,16 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    message: `주간 실행 완료. 세금 ${totalTax}클로버 징수, 클로버 씨앗 보상 ${miningAmount}클로버 지급 (${profiles.length}명 균등, 1인당 ${perStudent}클로버). 누적 발행: ${newIssuanceTotal}/21,000 클로버`
+    message: `주간 실행 완료. 보유세(${WEALTH_TAX_PERCENT_LABEL}) ${totalTax}클로버 징수, 클로버 씨앗 보상 ${miningAmount}클로버 지급 (${profiles.length}명 균등, 1인당 ${perStudent}클로버). 누적 발행: ${newIssuanceTotal}/21,000 클로버`
   });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "알 수 없는 오류";
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `주간 실행 중 오류가 발생했습니다: ${msg}`
+      },
+      { status: 500 }
+    );
+  }
 }

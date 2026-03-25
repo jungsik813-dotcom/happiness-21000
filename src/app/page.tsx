@@ -4,6 +4,7 @@ import StudentGrid from "@/components/dashboard/student-grid";
 import FundingGoalsDisplay from "@/components/dashboard/funding-goals-display";
 import PraiseTimeline from "@/components/dashboard/praise-timeline";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank";
 import Link from "next/link";
 
 type ProfileRow = {
@@ -17,6 +18,7 @@ type VaultRow = {
   issuance_total: number | null;
   issuance_count: number | null;
   fair_mode?: boolean | null;
+  transfer_hours_enforced?: boolean | null;
 };
 
 type GoalRow = {
@@ -38,7 +40,7 @@ export default async function HomePage() {
     supabase.from("profiles").select("id, name, balance").order("name"),
     supabase
       .from("vault")
-      .select("central_balance, issuance_total, issuance_count, fair_mode")
+      .select("central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced")
       .limit(1)
       .maybeSingle<VaultRow>(),
     supabase
@@ -59,6 +61,9 @@ export default async function HomePage() {
 
   const issuanceTotal = Number(vaultQuery.data?.issuance_total ?? 0);
   const issuanceCount = Number(vaultQuery.data?.issuance_count ?? 0);
+  const vaultBalance = Number(vaultQuery.data?.central_balance ?? 0);
+  const fairMode = Boolean(vaultQuery.data?.fair_mode ?? false);
+  const transferHoursEnforced = vaultQuery.data?.transfer_hours_enforced ?? true;
 
   const goals = goalsRaw
     .filter((g) => g && typeof g.id === "string")
@@ -78,8 +83,7 @@ export default async function HomePage() {
   >();
 
   for (const row of contributionRows) {
-    const txType = (row.tx_type ?? row.type ?? "") as string;
-    if (txType !== "contribution") continue;
+    if (!shouldIncludeInGoalContributorRank(row)) continue;
     const toGoalId = typeof row.to_goal_id === "string" ? row.to_goal_id : null;
     if (!toGoalId) continue;
     const fromId = typeof row.from_profile_id === "string" ? row.from_profile_id : null;
@@ -171,6 +175,12 @@ export default async function HomePage() {
         <p className="mt-2 text-sm text-gray-400">
           학급 클로버 총발행량을 한눈에 확인하세요.
         </p>
+        <p className="mt-2 text-sm text-gray-400">
+          중앙 금고 잔액{" "}
+          <span className="font-semibold text-orange-300">
+            {toWon(vaultBalance)} {CURRENCY}
+          </span>
+        </p>
         <p className="mt-3 rounded-lg border border-white/10 bg-slate-800/50 px-4 py-2 text-sm">
           <span className="text-gray-400">현재 유통중:</span>{" "}
           <span className="font-bold text-orange-400">{toWon(circulating)} {CURRENCY}</span>
@@ -206,7 +216,12 @@ export default async function HomePage() {
           </p>
         </section>
       ) : (
-        <StudentGrid students={profiles} goals={goals} />
+        <StudentGrid
+          students={profiles}
+          goals={goals}
+          fairMode={fairMode}
+          transferHoursEnforced={transferHoursEnforced}
+        />
       )}
     </main>
   );

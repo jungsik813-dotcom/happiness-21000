@@ -12,6 +12,14 @@ export type TimeLockResult =
   | { allowed: false; reason: "weekend" | "outside_hours" };
 
 /**
+ * 관리자가 평일 송금 시간 제한을 끈 경우(`transferHoursEnforced === false`)에는 항상 허용.
+ */
+export function getEffectiveTransferTimeLock(transferHoursEnforced: boolean): TimeLockResult {
+  if (!transferHoursEnforced) return { allowed: true };
+  return checkTransferTimeLock();
+}
+
+/**
  * 현재 시각이 송금 가능 시간인지 검사 (KST 기준)
  * - 평일(월~금) 08:30 ~ 15:30
  */

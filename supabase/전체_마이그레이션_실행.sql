@@ -76,6 +76,10 @@ ALTER TABLE vault ADD COLUMN IF NOT EXISTS fair_mode boolean DEFAULT false;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS password_hash text;
 UPDATE profiles SET password_hash = '9af15b336e6a9619928537df30b2e6a2376569fcf9d7e773eccede65606529a0' WHERE password_hash IS NULL;
 
+-- ========== 005 ==========
+ALTER TABLE vault ADD COLUMN IF NOT EXISTS transfer_hours_enforced boolean DEFAULT true;
+UPDATE vault SET transfer_hours_enforced = COALESCE(transfer_hours_enforced, true);
+
 -- ========== 학생 추가 (이름 수정 후 사용, 최초 1회만) ==========
 INSERT INTO profiles (name, balance) VALUES
   ('김철수', 0),

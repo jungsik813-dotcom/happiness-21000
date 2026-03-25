@@ -4,6 +4,7 @@ import GoalManager from "./goal-manager";
 import FundingSection from "./funding-section";
 import StudentPasswordReset from "./student-password-reset";
 import FairModeToggle from "./fair-mode-toggle";
+import BusinessHoursToggle from "./business-hours-toggle";
 import AdminGate from "@/components/admin/admin-gate";
 
 export type Goal = {
@@ -34,6 +35,7 @@ type AdminSectionProps = {
   contributions?: Record<string, GoalContributions>;
   burnedByGoal?: Record<string, number>;
   fairMode?: boolean;
+  transferHoursEnforced?: boolean;
 };
 
 export default function AdminSection({
@@ -41,18 +43,20 @@ export default function AdminSection({
   students = [],
   contributions = {},
   burnedByGoal = {},
-  fairMode = false
+  fairMode = false,
+  transferHoursEnforced = true
 }: AdminSectionProps) {
   return (
     <>
       <AdminGate
         fallback={
           <section className="mb-6 rounded-xl border border-slate-600/50 bg-slate-900/50 p-4">
-            <p className="text-sm text-gray-400">🔒 장터 모드 설정 (관리자 전용)</p>
+            <p className="text-sm text-gray-400">🔒 장터·영업시간 설정 (관리자 전용)</p>
           </section>
         }
       >
         <FairModeToggle fairMode={fairMode} />
+        <BusinessHoursToggle transferHoursEnforced={transferHoursEnforced} />
       </AdminGate>
       <StudentPasswordReset students={students} />
       <GoalManager goals={goals} />

@@ -14,12 +14,20 @@ export default function MainHeader() {
           칭찬과 함께 나누는 우리 반 클로버
         </p>
       </div>
-      <Link
-        href="/admin"
-        className="shrink-0 rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-gray-400 transition hover:border-orange-400/50 hover:text-orange-300"
-      >
-        관리자
-      </Link>
+      <nav className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <Link
+          href="/guide"
+          className="rounded-lg border border-orange-400/40 bg-orange-500/10 px-4 py-2 text-sm font-medium text-orange-300 transition hover:border-orange-400/60 hover:bg-orange-500/15"
+        >
+          학급화폐 가이드
+        </Link>
+        <Link
+          href="/admin"
+          className="rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-gray-400 transition hover:border-orange-400/50 hover:text-orange-300"
+        >
+          관리자
+        </Link>
+      </nav>
     </header>
   );
 }

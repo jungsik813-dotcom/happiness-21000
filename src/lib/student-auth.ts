@@ -7,7 +7,7 @@ function hashPin(pin: string): string {
 export function verifyStudentPassword(pin: string, storedHash: string | null): boolean {
   if (!storedHash || typeof storedHash !== "string") return false;
   const p = String(pin ?? "").trim();
-  if (p.length < 4 || p.length > 6) return false;
+  if (p.length !== 4) return false;
   const a = Buffer.from(hashPin(p), "hex");
   const b = Buffer.from(storedHash, "hex");
   if (a.length !== b.length) return false;

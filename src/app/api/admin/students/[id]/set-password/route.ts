@@ -23,9 +23,9 @@ export async function PATCH(
   const body = (await request.json()) as { password?: string };
   const password = typeof body.password === "string" ? body.password.trim() : "";
 
-  if (password.length < 4 || password.length > 6 || !/^\d+$/.test(password)) {
+  if (password.length !== 4 || !/^\d+$/.test(password)) {
     return NextResponse.json(
-      { ok: false, message: "4~6자리 숫자 비밀번호를 입력해주세요." },
+      { ok: false, message: "4자리 숫자 비밀번호를 입력해주세요." },
       { status: 400 }
     );
   }

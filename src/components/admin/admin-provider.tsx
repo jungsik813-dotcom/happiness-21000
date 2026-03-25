@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -25,8 +26,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      const stored = typeof window !== "undefined" ? sessionStorage.getItem(STORAGE_KEY) : null;
-      setToken(stored ?? null);
+      const stored =
+        typeof window !== "undefined" ? sessionStorage.getItem(STORAGE_KEY) : null;
+      startTransition(() => {
+        setToken(stored ?? null);
+      });
     } catch {
       /* ignore */
     }

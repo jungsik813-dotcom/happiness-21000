@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { checkTransferTimeLock, getTimeLockMessage } from "@/lib/time-lock";
-import { CURRENCY } from "@/lib/constants";
+import { getEffectiveTransferTimeLock, getTimeLockMessage } from "@/lib/time-lock";
+import { CURRENCY, maxAmountPerTransfer } from "@/lib/constants";
 
 type Student = {
   id: string;
@@ -22,6 +22,10 @@ type Goal = {
 type StudentGridProps = {
   students: Student[];
   goals?: Goal[];
+  /** 장터 모드 ON이면 학생 간 송금만 회당 잔액 전액까지 */
+  fairMode?: boolean;
+  /** false면 평일 시간 제한 없이 송금 (관리자 설정) */
+  transferHoursEnforced?: boolean;
 };
 
 function toWon(value: number) {
@@ -30,7 +34,12 @@ function toWon(value: number) {
 
 const GOAL_PREFIX = "goal-";
 
-export default function StudentGrid({ students, goals = [] }: StudentGridProps) {
+export default function StudentGrid({
+  students,
+  goals = [],
+  fairMode = false,
+  transferHoursEnforced = true
+}: StudentGridProps) {
   const router = useRouter();
   const [localStudents, setLocalStudents] = useState<Student[]>(students);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -63,13 +72,13 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
     [goals]
   );
 
-  const timeLockResult = checkTransferTimeLock();
+  const timeLockResult = getEffectiveTransferTimeLock(transferHoursEnforced);
   const isP2PToStudent = toRecipient && !toRecipient.startsWith(GOAL_PREFIX);
 
   async function handlePasswordVerify() {
     if (!passwordModalStudent) return;
     const pin = passwordInput.trim();
-    if (pin.length < 4) {
+    if (pin.length !== 4) {
       showToast("4자리 비밀번호를 입력해주세요.", "error");
       return;
     }
@@ -117,6 +126,13 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
     ];
   }, [selectedStudent, localStudents, activeGoals]);
 
+  const maxOnceThisTransfer = useMemo(() => {
+    if (!selectedStudent) return 0;
+    const p2p = Boolean(toRecipient && !toRecipient.startsWith(GOAL_PREFIX));
+    if (p2p && fairMode) return selectedStudent.balance;
+    return maxAmountPerTransfer(selectedStudent.balance);
+  }, [selectedStudent, toRecipient, fairMode]);
+
   const selectedGoalNeeded = useMemo(() => {
     if (!toRecipient.startsWith(GOAL_PREFIX)) return null;
     const goalId = toRecipient.slice(GOAL_PREFIX.length);
@@ -149,6 +165,20 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
     }
 
     const isGoal = toRecipient.startsWith(GOAL_PREFIX);
+    const maxOnce = isGoal
+      ? maxAmountPerTransfer(sender.balance)
+      : fairMode
+        ? sender.balance
+        : maxAmountPerTransfer(sender.balance);
+    if (transferAmount > maxOnce) {
+      showToast(
+        isGoal || !fairMode
+          ? `한 번에 최대 ${toWon(maxOnce)} ${CURRENCY}(현재 잔액의 10%)까지 보낼 수 있어요.`
+          : `한 번에 최대 ${toWon(maxOnce)} ${CURRENCY}(전액)까지 보낼 수 있어요.`,
+        "error"
+      );
+      return;
+    }
     const toGoalId = isGoal ? toRecipient.slice(GOAL_PREFIX.length) : null;
     const toStudentId = isGoal ? null : toRecipient;
 
@@ -157,21 +187,18 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
       return;
     }
 
+    const praiseForSend = praiseMessage.trim();
     setIsSubmitting(true);
-    setSelectedStudent(null);
-    setToRecipient("");
-    setAmount("");
-    setPraiseMessage("");
 
     try {
       const body: Record<string, unknown> = {
         fromStudentId: sender.id,
-        amount: transferAmount
+        amount: Math.floor(transferAmount)
       };
       if (toGoalId) body.toGoalId = toGoalId;
       else {
         body.toStudentId = toStudentId;
-        body.praiseMessage = praiseMessage.trim();
+        body.praiseMessage = praiseForSend;
       }
 
       const response = await fetch("/api/transactions/transfer", {
@@ -180,15 +207,22 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
         body: JSON.stringify(body)
       });
 
-      const result = (await response.json()) as {
+      let result: {
         ok: boolean;
-        message: string;
+        message?: string;
         remainingBalance?: number;
         txRecorded?: boolean;
         txError?: string;
       };
+      try {
+        result = (await response.json()) as typeof result;
+      } catch {
+        showToast("서버 응답을 읽을 수 없습니다. 네트워크를 확인해주세요.", "error");
+        return;
+      }
+
       if (!response.ok || !result.ok) {
-        showToast(result.message, "error");
+        showToast(result.message ?? "송금에 실패했습니다.", "error");
         return;
       }
 
@@ -204,8 +238,14 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
           return student;
         })
       );
+      setSelectedStudent((prev) =>
+        prev && prev.id === sender.id ? { ...prev, balance: remaining } : prev
+      );
+      setToRecipient("");
+      setAmount("");
+      setPraiseMessage("");
       showToast(
-        `${result.message}${
+        `${result.message ?? ""}${
           result.txRecorded === false && result.txError
             ? ` (원인: ${result.txError})`
             : ""
@@ -271,9 +311,9 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
               type="password"
               inputMode="numeric"
               pattern="[0-9]*"
-              maxLength={6}
+              maxLength={4}
               value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => setPasswordInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
               onKeyDown={(e) => e.key === "Enter" && handlePasswordVerify()}
               placeholder="0000"
               className="mt-4 w-full rounded-md border border-white/20 bg-slate-800 px-4 py-3 text-center text-lg tracking-[0.5em] text-white outline-none focus:border-orange-400"
@@ -292,7 +332,7 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
               <button
                 type="button"
                 onClick={handlePasswordVerify}
-                disabled={passwordVerifying || passwordInput.length < 4}
+                disabled={passwordVerifying || passwordInput.length !== 4}
                 className="flex-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
               >
                 {passwordVerifying ? "확인 중..." : "입장"}
@@ -317,7 +357,12 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
             </p>
 
             <div className="mt-6 grid gap-3">
-              {!timeLockResult.allowed && (
+              {!transferHoursEnforced && (
+                <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">
+                  송금 시간 제한이 꺼져 있어 평일 시간과 관계없이 송금·기부할 수 있어요.
+                </div>
+              )}
+              {transferHoursEnforced && !timeLockResult.allowed && (
                 <div className="rounded-lg border border-amber-500/50 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
                   ⏰ {getTimeLockMessage(timeLockResult)}
                 </div>
@@ -373,9 +418,27 @@ export default function StudentGrid({ students, goals = [] }: StudentGridProps) 
                   className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400"
                   placeholder="예: 100"
                 />
-                <p className="mt-2 text-xs text-gray-400">
-                  {isP2PToStudent && "평소: 잔액의 10%까지 | 장터 모드: 100%까지"}
-                </p>
+                {toRecipient ? (
+                  <p className="mt-2 text-xs text-gray-400">
+                    한 번에 보낼 수 있는 최대:{" "}
+                    <span className="font-medium text-orange-300/90">
+                      {toWon(maxOnceThisTransfer)} {CURRENCY}
+                    </span>
+                    {isP2PToStudent && fairMode ? (
+                      <span> — 장터 모드: 친구에게는 잔액 전액까지 한 번에 보낼 수 있어요.</span>
+                    ) : (
+                      <span>
+                        {" "}
+                        (펀딩·일반 P2P: 송금 직전 잔액의 10%, 여러 번 나누어 보내도 매번 10%)
+                      </span>
+                    )}
+                    {maxOnceThisTransfer < 1 && (
+                      <span className="ml-1 text-amber-400">
+                        · 잔액이 적어 지금은 송금할 수 없어요
+                      </span>
+                    )}
+                  </p>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleTransfer}

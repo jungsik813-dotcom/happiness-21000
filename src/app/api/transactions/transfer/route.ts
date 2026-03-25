@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { insertTransaction } from "@/lib/transactions";
-import { checkTransferTimeLock, getTimeLockMessage } from "@/lib/time-lock";
+import { getEffectiveTransferTimeLock, getTimeLockMessage } from "@/lib/time-lock";
+import { maxAmountPerTransfer } from "@/lib/constants";
+import { readJsonObject } from "@/lib/safe-json";
+import { splitGoalFunding } from "@/lib/goal-funding";
+import { isUuid, parseCloverAmount } from "@/lib/validation";
 
 type TransferBody = {
   fromStudentId?: string;
@@ -12,27 +16,66 @@ type TransferBody = {
 };
 
 type ProfileRow = { id: string; balance: number | null; name: string | null };
-type GoalRow = { id: string; name: string; target_amount: number; current_amount: number };
+type GoalRow = {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+};
+type VaultRow = { id: string; central_balance: number | null };
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as TransferBody;
-  const fromStudentId = body.fromStudentId?.trim();
+  const parsed = await readJsonObject(request);
+  if (!parsed.ok) return parsed.response;
+
+  const body = parsed.data as TransferBody;
+  const fromStudentId = body.fromStudentId?.trim() ?? "";
   const toStudentId = body.toStudentId?.trim() || null;
   const toGoalId = body.toGoalId?.trim() || null;
-  const amount = Number(body.amount ?? 0);
   const praiseMessage = typeof body.praiseMessage === "string" ? body.praiseMessage.trim() : "";
+
+  const amountParsed = parseCloverAmount(body.amount);
+  if (!amountParsed.ok) {
+    return NextResponse.json(
+      { ok: false, message: "송금 금액은 1 이상의 정수(클로버)로 입력해주세요." },
+      { status: 400 }
+    );
+  }
+  const amount = amountParsed.value;
 
   const isP2P = Boolean(toStudentId);
   const isContribution = Boolean(toGoalId);
 
-  if (!fromStudentId || (!isP2P && !isContribution) || Number.isNaN(amount) || amount <= 0) {
+  if (!fromStudentId || !isUuid(fromStudentId)) {
+    return NextResponse.json({ ok: false, message: "보내는 학생 정보가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (isP2P && (!toStudentId || !isUuid(toStudentId))) {
+    return NextResponse.json({ ok: false, message: "받는 학생 정보가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (isContribution && (!toGoalId || !isUuid(toGoalId))) {
+    return NextResponse.json({ ok: false, message: "펀딩 목표 정보가 올바르지 않습니다." }, { status: 400 });
+  }
+
+  if (!isP2P && !isContribution) {
     return NextResponse.json(
       { ok: false, message: "보내는 학생, 받는 대상, 송금 금액을 확인해주세요." },
       { status: 400 }
     );
   }
 
-  const timeLock = checkTransferTimeLock();
+  const supabase = await createSupabaseServerClient();
+  const vaultSettings = await supabase
+    .from("vault")
+    .select("transfer_hours_enforced, fair_mode")
+    .limit(1)
+    .maybeSingle<{
+      transfer_hours_enforced: boolean | null;
+      fair_mode: boolean | null;
+    }>();
+  const transferHoursEnforced = vaultSettings.data?.transfer_hours_enforced ?? true;
+  const fairMode = vaultSettings.data?.fair_mode ?? false;
+
+  const timeLock = getEffectiveTransferTimeLock(transferHoursEnforced);
   if (!timeLock.allowed) {
     return NextResponse.json(
       { ok: false, message: getTimeLockMessage(timeLock) },
@@ -56,8 +99,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = await createSupabaseServerClient();
-
   const fromQuery = await supabase
     .from("profiles")
     .select("id, name, balance")
@@ -79,22 +120,22 @@ export async function POST(request: Request) {
     );
   }
 
-  if (isP2P) {
-    const vaultRow = await supabase.from("vault").select("fair_mode").limit(1).maybeSingle<{ fair_mode: boolean | null }>();
-    const fairMode = vaultRow.data?.fair_mode ?? false;
-    const maxP2P = fairMode ? fromBalance : Math.floor(fromBalance * 0.1);
-    if (amount > maxP2P) {
-      const limitStr = fairMode ? "100%" : "10%";
-      return NextResponse.json(
-        { ok: false, message: `P2P 송금 한도는 잔액의 ${limitStr}입니다. (최대 ${maxP2P} 클로버)` },
-        { status: 400 }
-      );
-    }
+  /** P2P + 장터 모드: 회당 전액까지. 그 외(펀딩·일반 P2P): 회당 잔액의 10% */
+  const maxPerTransfer =
+    isP2P && fairMode ? fromBalance : maxAmountPerTransfer(fromBalance);
+  if (amount > maxPerTransfer) {
+    const msg =
+      isP2P && fairMode
+        ? `송금 금액이 잔액을 초과할 수 없습니다. (최대 ${maxPerTransfer} 클로버)`
+        : `한 번에 보낼 수 있는 최대액은 현재 잔액의 10%입니다. (최대 ${maxPerTransfer} 클로버, 여러 번 나누어 보낼 수 있어요)`;
+    return NextResponse.json({ ok: false, message: msg }, { status: 400 });
   }
 
   let effectiveAmount = amount;
   let memo: string;
   let cappedMessage = "";
+  /** 펀딩에 실제 반영된 금액 (거래 기록용). 0이면 contribution 타입 메인 로그 생략 */
+  let contributionToGoal = 0;
 
   if (isContribution) {
     const goalQuery = await supabase
@@ -111,55 +152,118 @@ export async function POST(request: Request) {
       );
     }
 
-    const currentAmount = goalQuery.data.current_amount ?? 0;
-    const targetAmount = goalQuery.data.target_amount ?? 0;
-    const needed = Math.max(0, targetAmount - currentAmount);
+    const vaultRes = await supabase
+      .from("vault")
+      .select("id, central_balance")
+      .limit(1)
+      .single<VaultRow>();
 
-    if (needed <= 0) {
+    if (vaultRes.error || !vaultRes.data) {
       return NextResponse.json(
-        { ok: false, message: "이 펀딩은 이미 목표액에 도달했습니다." },
-        { status: 400 }
-      );
-    }
-
-    const actualAmount = Math.min(amount, needed);
-    const excess = amount - actualAmount;
-    cappedMessage =
-      excess > 0
-        ? ` 목표 달성에 필요한 ${actualAmount} P만 사용되었고, 나머지 ${excess} P는 차감되지 않았습니다.`
-        : "";
-    const newGoalAmount = currentAmount + actualAmount;
-
-    const goalReached = newGoalAmount >= targetAmount;
-    const goalUpdatePayload = goalReached
-      ? { current_amount: 0, is_active: false }
-      : { current_amount: newGoalAmount };
-
-    const goalUpdate = await supabase
-      .from("goals")
-      .update(goalUpdatePayload)
-      .eq("id", toGoalId!);
-
-    if (goalUpdate.error) {
-      return NextResponse.json(
-        { ok: false, message: "펀딩 적립 중 오류가 발생했습니다." },
+        { ok: false, message: "중앙 금고 정보를 찾을 수 없습니다." },
         { status: 500 }
       );
     }
 
-    if (goalReached && newGoalAmount > 0) {
+    const goalRow = goalQuery.data;
+    const currentAmount = goalRow.current_amount ?? 0;
+    const targetAmount = goalRow.target_amount ?? 0;
+    const split = splitGoalFunding(currentAmount, targetAmount, amount);
+    contributionToGoal = split.toGoal;
+
+    if (split.needsStaleCompletion) {
+      if (currentAmount > 0) {
+        await insertTransaction(supabase, {
+          txType: "burn",
+          amount: currentAmount,
+          fromProfileId: null,
+          toProfileId: null,
+          toGoalId: toGoalId!,
+          memo: `소각: ${goalRow.name} 펀딩 완료(정리)`
+        });
+      }
+      const staleClose = await supabase
+        .from("goals")
+        .update({ is_active: false, current_amount: 0 })
+        .eq("id", toGoalId!);
+      if (staleClose.error) {
+        return NextResponse.json(
+          { ok: false, message: "펀딩 목표 정리 중 오류가 발생했습니다." },
+          { status: 500 }
+        );
+      }
+      cappedMessage =
+        split.toVault > 0
+          ? ` 이미 목표를 달성한 펀딩이었습니다. 보낸 ${split.toVault} 클로버는 중앙 금고로 전달되었습니다.`
+          : "";
+    } else if (split.toGoal > 0) {
+      if (split.goalReached) {
+        const goalClose = await supabase
+          .from("goals")
+          .update({ is_active: false, current_amount: 0 })
+          .eq("id", toGoalId!);
+        if (goalClose.error) {
+          return NextResponse.json(
+            { ok: false, message: "펀딩 적립 중 오류가 발생했습니다." },
+            { status: 500 }
+          );
+        }
+        await insertTransaction(supabase, {
+          txType: "burn",
+          amount: split.newGoalTotal,
+          fromProfileId: null,
+          toProfileId: null,
+          toGoalId: toGoalId!,
+          memo: `소각: ${goalRow.name} 펀딩 완료`
+        });
+        cappedMessage =
+          split.toVault > 0
+            ? ` 펀딩 목표를 달성했습니다! 초과분 ${split.toVault} 클로버는 중앙 금고로 전달되었습니다.`
+            : " 펀딩 목표를 달성했습니다!";
+      } else {
+        const goalUpdate = await supabase
+          .from("goals")
+          .update({ current_amount: split.newGoalTotal })
+          .eq("id", toGoalId!);
+        if (goalUpdate.error) {
+          return NextResponse.json(
+            { ok: false, message: "펀딩 적립 중 오류가 발생했습니다." },
+            { status: 500 }
+          );
+        }
+        cappedMessage =
+          split.toVault > 0
+            ? ` 목표에 ${split.toGoal} 클로버가 반영되었고, 나머지 ${split.toVault} 클로버는 중앙 금고로 전달되었습니다.`
+            : "";
+      }
+    } else if (split.toVault > 0) {
+      cappedMessage = ` 보낸 ${split.toVault} 클로버는 중앙 금고로 전달되었습니다.`;
+    }
+
+    if (split.toVault > 0) {
+      const vb = vaultRes.data.central_balance ?? 0;
+      const vaultAdd = await supabase
+        .from("vault")
+        .update({ central_balance: vb + split.toVault })
+        .eq("id", vaultRes.data.id);
+      if (vaultAdd.error) {
+        return NextResponse.json(
+          { ok: false, message: "중앙 금고 적립 중 오류가 발생했습니다." },
+          { status: 500 }
+        );
+      }
       await insertTransaction(supabase, {
-        txType: "burn",
-        amount: newGoalAmount,
+        txType: "funding_overflow",
+        amount: split.toVault,
         fromProfileId: null,
         toProfileId: null,
-        toGoalId: toGoalId!,
-        memo: `소각: ${goalQuery.data.name} 펀딩 완료`
+        toGoalId: null,
+        memo: `펀딩 초과분 → 중앙 금고 (${goalRow.name})`
       });
     }
 
-    effectiveAmount = actualAmount;
-    memo = `${fromQuery.data.name ?? "이름 없음"} → 펀딩: ${goalQuery.data.name}`;
+    effectiveAmount = amount;
+    memo = `${fromQuery.data.name ?? "이름 없음"} → 펀딩: ${goalRow.name}`;
   } else {
     const toQuery = await supabase
       .from("profiles")
@@ -207,19 +311,21 @@ export async function POST(request: Request) {
   }
 
   const txType = isContribution ? "contribution" : "transfer";
-  const txResult = await insertTransaction(supabase, {
-    txType,
-    amount: effectiveAmount,
-    fromProfileId: fromStudentId,
-    toProfileId: isP2P ? toStudentId : null,
-    toGoalId: isContribution ? toGoalId : null,
-    memo
-  });
+  const shouldInsertMainTx = !isContribution || contributionToGoal > 0;
+  const txResult = shouldInsertMainTx
+    ? await insertTransaction(supabase, {
+        txType,
+        amount: isContribution ? contributionToGoal : effectiveAmount,
+        fromProfileId: fromStudentId,
+        toProfileId: isP2P ? toStudentId : null,
+        toGoalId: isContribution ? toGoalId : null,
+        memo
+      })
+    : { ok: true as const };
 
   const baseMessage = isContribution ? "기부가 완료되었습니다." : "송금이 완료되었습니다.";
-  const fullMessage = isContribution && cappedMessage
-    ? baseMessage + cappedMessage
-    : baseMessage;
+  const fullMessage =
+    isContribution && cappedMessage ? baseMessage + cappedMessage : baseMessage;
 
   if (!txResult.ok) {
     return NextResponse.json(

@@ -25,10 +25,10 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
       setMessage("학생을 선택해주세요.");
       return;
     }
-    const pin = newPassword.replace(/\D/g, "").slice(0, 6);
-    if (pin.length < 4) {
+    const pin = newPassword.replace(/\D/g, "").slice(0, 4);
+    if (pin.length !== 4) {
       setStatus("error");
-      setMessage("4~6자리 숫자 비밀번호를 입력해주세요.");
+      setMessage("4자리 숫자 비밀번호를 입력해주세요.");
       return;
     }
 
@@ -117,13 +117,13 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
             </select>
           </div>
           <div>
-            <label className="mb-2 block text-xs text-gray-400">새 비밀번호 (4~6자리 숫자)</label>
+            <label className="mb-2 block text-xs text-gray-400">새 비밀번호 (4자리 숫자)</label>
             <input
               type="password"
               inputMode="numeric"
-              maxLength={6}
+              maxLength={4}
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => setNewPassword(e.target.value.replace(/\D/g, "").slice(0, 4))}
               placeholder="0000"
               className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
               disabled={status === "loading"}
@@ -144,7 +144,7 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
             <button
               type="button"
               onClick={handleSetPassword}
-              disabled={status === "loading" || !selectedId || newPassword.length < 4}
+              disabled={status === "loading" || !selectedId || newPassword.length !== 4}
               className="rounded-md bg-orange-500/80 px-4 py-2 text-sm font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {status === "loading" ? "처리 중..." : "비밀번호 설정 (해시 저장)"}

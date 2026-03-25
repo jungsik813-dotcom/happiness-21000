@@ -5,6 +5,7 @@ import AdminGate from "@/components/admin/admin-gate";
 import AdminSection from "@/components/dashboard/admin-section";
 import VaultTransfer from "@/components/dashboard/vault-transfer";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank";
 
 type ProfileRow = {
   id: string;
@@ -18,6 +19,7 @@ type VaultRow = {
   issuance_total: number | null;
   issuance_count: number | null;
   fair_mode?: boolean | null;
+  transfer_hours_enforced?: boolean | null;
 };
 
 type GoalRow = {
@@ -39,7 +41,7 @@ export default async function AdminPage() {
     supabase.from("profiles").select("id, name, balance").order("name"),
     supabase
       .from("vault")
-      .select("id, central_balance, issuance_total, issuance_count, fair_mode")
+      .select("id, central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced")
       .limit(1)
       .maybeSingle<VaultRow>(),
     supabase
@@ -59,6 +61,7 @@ export default async function AdminPage() {
   const issuanceTotal = Number(vaultQuery.data?.issuance_total ?? 0);
   const issuanceCount = Number(vaultQuery.data?.issuance_count ?? 0);
   const fairMode = Boolean(vaultQuery.data?.fair_mode ?? false);
+  const transferHoursEnforced = vaultQuery.data?.transfer_hours_enforced ?? true;
 
   const goalsRaw = Array.isArray(goalsQuery.data) ? goalsQuery.data : (goalsQuery.data ?? []);
   const goals = goalsRaw
@@ -79,8 +82,7 @@ export default async function AdminPage() {
   >();
 
   for (const row of contributionRows) {
-    const txType = (row.tx_type ?? row.type ?? "") as string;
-    if (txType !== "contribution") continue;
+    if (!shouldIncludeInGoalContributorRank(row)) continue;
     const toGoalId = typeof row.to_goal_id === "string" ? row.to_goal_id : null;
     if (!toGoalId) continue;
     const fromId = typeof row.from_profile_id === "string" ? row.from_profile_id : null;
@@ -184,6 +186,7 @@ export default async function AdminPage() {
             contributions={contributions}
             burnedByGoal={Object.fromEntries(burnedByGoal.entries())}
             fairMode={fairMode}
+            transferHoursEnforced={transferHoursEnforced}
           />
         </AdminGate>
       </main>

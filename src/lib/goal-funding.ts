@@ -1,6 +1,9 @@
 /**
  * 펀딩 목표에 들어오는 금액을 목표 잔여 한도와 중앙 금고(초과분)로 나눕니다.
  */
+import type { DecimalPlaces } from "./money";
+import { roundToDecimalPlaces } from "./money";
+
 export type GoalFundingSplit = {
   /** 목표에 적립되는 양 */
   toGoal: number;
@@ -17,14 +20,19 @@ export type GoalFundingSplit = {
   needsStaleCompletion: boolean;
 };
 
+function normMoney(n: number, dp: DecimalPlaces): number {
+  return Math.max(0, roundToDecimalPlaces(Number(n) || 0, dp));
+}
+
 export function splitGoalFunding(
   currentAmount: number,
   targetAmount: number,
-  incoming: number
+  incoming: number,
+  dp: DecimalPlaces = 0
 ): GoalFundingSplit {
-  const target = Math.max(0, Math.floor(Number(targetAmount) || 0));
-  const current = Math.max(0, Math.floor(Number(currentAmount) || 0));
-  const incomingSafe = Math.max(0, Math.floor(incoming));
+  const target = normMoney(targetAmount, dp);
+  const current = normMoney(currentAmount, dp);
+  const incomingSafe = normMoney(incoming, dp);
 
   if (incomingSafe <= 0) {
     return {
@@ -57,10 +65,10 @@ export function splitGoalFunding(
     };
   }
 
-  const toGoal = Math.min(incomingSafe, needed);
-  const toVault = incomingSafe - toGoal;
-  const newGoalTotal = current + toGoal;
-  const goalReached = newGoalTotal >= target;
+  const toGoal = roundToDecimalPlaces(Math.min(incomingSafe, needed), dp);
+  const toVault = roundToDecimalPlaces(incomingSafe - toGoal, dp);
+  const newGoalTotal = roundToDecimalPlaces(current + toGoal, dp);
+  const goalReached = newGoalTotal >= target - 1e-9;
 
   return {
     toGoal,

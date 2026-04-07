@@ -5,12 +5,15 @@ import { getEffectiveTransferTimeLock, getTimeLockMessage } from "@/lib/time-loc
 import { maxAmountPerTransfer } from "@/lib/constants";
 import { readJsonObject } from "@/lib/safe-json";
 import { splitGoalFunding } from "@/lib/goal-funding";
+import { normalizeDecimalPlaces } from "@/lib/vault-settings";
 import { isUuid, parseCloverAmount } from "@/lib/validation";
+import type { DecimalPlaces } from "@/lib/money";
 
 type TransferBody = {
   fromStudentId?: string;
   toStudentId?: string;
   toGoalId?: string;
+  toVault?: boolean;
   amount?: number;
   praiseMessage?: string;
 };
@@ -32,19 +35,13 @@ export async function POST(request: Request) {
   const fromStudentId = body.fromStudentId?.trim() ?? "";
   const toStudentId = body.toStudentId?.trim() || null;
   const toGoalId = body.toGoalId?.trim() || null;
+  const toVault = body.toVault === true;
   const praiseMessage = typeof body.praiseMessage === "string" ? body.praiseMessage.trim() : "";
-
-  const amountParsed = parseCloverAmount(body.amount);
-  if (!amountParsed.ok) {
-    return NextResponse.json(
-      { ok: false, message: "송금 금액은 1 이상의 정수(클로버)로 입력해주세요." },
-      { status: 400 }
-    );
-  }
-  const amount = amountParsed.value;
 
   const isP2P = Boolean(toStudentId);
   const isContribution = Boolean(toGoalId);
+  const isVaultDeposit = toVault;
+  const destinationCount = Number(isP2P) + Number(isContribution) + Number(isVaultDeposit);
 
   if (!fromStudentId || !isUuid(fromStudentId)) {
     return NextResponse.json({ ok: false, message: "보내는 학생 정보가 올바르지 않습니다." }, { status: 400 });
@@ -56,9 +53,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "펀딩 목표 정보가 올바르지 않습니다." }, { status: 400 });
   }
 
-  if (!isP2P && !isContribution) {
+  if (destinationCount !== 1) {
     return NextResponse.json(
-      { ok: false, message: "보내는 학생, 받는 대상, 송금 금액을 확인해주세요." },
+      { ok: false, message: "받는 대상을 한 곳만 선택해주세요." },
       { status: 400 }
     );
   }
@@ -66,14 +63,31 @@ export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
   const vaultSettings = await supabase
     .from("vault")
-    .select("transfer_hours_enforced, fair_mode")
+    .select("transfer_hours_enforced, fair_mode, decimal_places")
     .limit(1)
     .maybeSingle<{
       transfer_hours_enforced: boolean | null;
       fair_mode: boolean | null;
+      decimal_places: number | null;
     }>();
   const transferHoursEnforced = vaultSettings.data?.transfer_hours_enforced ?? true;
   const fairMode = vaultSettings.data?.fair_mode ?? false;
+  const dp = normalizeDecimalPlaces(vaultSettings.data?.decimal_places) as DecimalPlaces;
+
+  const amountParsed = parseCloverAmount(body.amount, dp);
+  if (!amountParsed.ok) {
+    const hint =
+      dp === 0
+        ? "1 이상의 정수(클로버)"
+        : dp === 1
+          ? "0.1 이상, 소수 첫째 자리까지"
+          : "0.01 이상, 소수 둘째 자리까지";
+    return NextResponse.json(
+      { ok: false, message: `송금 금액을 확인해주세요. (${hint})` },
+      { status: 400 }
+    );
+  }
+  const amount = amountParsed.value;
 
   const timeLock = getEffectiveTransferTimeLock(transferHoursEnforced);
   if (!timeLock.allowed) {
@@ -83,13 +97,11 @@ export async function POST(request: Request) {
     );
   }
 
-  if (isP2P) {
-    if (praiseMessage.length < 10) {
-      return NextResponse.json(
-        { ok: false, message: "칭찬 메시지를 10자 이상 입력해주세요." },
-        { status: 400 }
-      );
-    }
+  if (praiseMessage.length < 10) {
+    return NextResponse.json(
+      { ok: false, message: "송금 사유/칭찬 메시지를 10자 이상 입력해주세요." },
+      { status: 400 }
+    );
   }
 
   if (isP2P && fromStudentId === toStudentId) {
@@ -101,9 +113,9 @@ export async function POST(request: Request) {
 
   const fromQuery = await supabase
     .from("profiles")
-    .select("id, name, balance")
+    .select("id, name, balance, account_type")
     .eq("id", fromStudentId)
-    .single<ProfileRow>();
+    .single<ProfileRow & { account_type: string | null }>();
 
   if (fromQuery.error || !fromQuery.data) {
     return NextResponse.json(
@@ -120,15 +132,24 @@ export async function POST(request: Request) {
     );
   }
 
-  /** P2P + 장터 모드: 회당 전액까지. 그 외(펀딩·일반 P2P): 회당 잔액의 10% */
-  const maxPerTransfer =
-    isP2P && fairMode ? fromBalance : maxAmountPerTransfer(fromBalance);
-  if (amount > maxPerTransfer) {
-    const msg =
-      isP2P && fairMode
-        ? `송금 금액이 잔액을 초과할 수 없습니다. (최대 ${maxPerTransfer} 클로버)`
-        : `한 번에 보낼 수 있는 최대액은 현재 잔액의 10%입니다. (최대 ${maxPerTransfer} 클로버, 여러 번 나누어 보낼 수 있어요)`;
-    return NextResponse.json({ ok: false, message: msg }, { status: 400 });
+  const fromIsCorp = (fromQuery.data.account_type ?? "STUDENT") === "CORPORATION";
+  if (fromIsCorp) {
+    return NextResponse.json(
+      { ok: false, message: "법인 계정은 직접 송금할 수 없고, 지분 배당만 가능합니다." },
+      { status: 400 }
+    );
+  }
+  if (!fromIsCorp && (isContribution || isVaultDeposit)) {
+    const maxPerTransfer = maxAmountPerTransfer(fromBalance, dp);
+    if (amount > maxPerTransfer) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: `한 번에 보낼 수 있는 최대액은 현재 잔액의 10%입니다. (최대 ${maxPerTransfer} 클로버, 여러 번 나누어 보낼 수 있어요)`
+        },
+        { status: 400 }
+      );
+    }
   }
 
   let effectiveAmount = amount;
@@ -168,7 +189,7 @@ export async function POST(request: Request) {
     const goalRow = goalQuery.data;
     const currentAmount = goalRow.current_amount ?? 0;
     const targetAmount = goalRow.target_amount ?? 0;
-    const split = splitGoalFunding(currentAmount, targetAmount, amount);
+    const split = splitGoalFunding(currentAmount, targetAmount, amount, dp);
     contributionToGoal = split.toGoal;
 
     if (split.needsStaleCompletion) {
@@ -264,18 +285,62 @@ export async function POST(request: Request) {
 
     effectiveAmount = amount;
     memo = `${fromQuery.data.name ?? "이름 없음"} → 펀딩: ${goalRow.name}`;
+  } else if (isVaultDeposit) {
+    const vaultRes = await supabase
+      .from("vault")
+      .select("id, central_balance")
+      .limit(1)
+      .single<VaultRow>();
+
+    if (vaultRes.error || !vaultRes.data) {
+      return NextResponse.json(
+        { ok: false, message: "중앙 금고 정보를 찾을 수 없습니다." },
+        { status: 500 }
+      );
+    }
+
+    const newVaultBalance = (vaultRes.data.central_balance ?? 0) + amount;
+    const vaultUpdate = await supabase
+      .from("vault")
+      .update({ central_balance: newVaultBalance })
+      .eq("id", vaultRes.data.id);
+
+    if (vaultUpdate.error) {
+      return NextResponse.json(
+        { ok: false, message: "중앙 금고 적립 중 오류가 발생했습니다." },
+        { status: 500 }
+      );
+    }
+
+    memo = `${fromQuery.data.name ?? "이름 없음"} → 중앙 금고${
+      praiseMessage ? ` | 사유: ${praiseMessage}` : ""
+    }`;
   } else {
     const toQuery = await supabase
       .from("profiles")
-      .select("id, name, balance")
+      .select("id, name, balance, account_type")
       .eq("id", toStudentId!)
-      .single<ProfileRow>();
+      .single<ProfileRow & { account_type: string | null }>();
 
     if (toQuery.error || !toQuery.data) {
       return NextResponse.json(
         { ok: false, message: "받는 학생 정보를 찾을 수 없습니다." },
         { status: 404 }
       );
+    }
+
+    const toIsCorp = (toQuery.data.account_type ?? "STUDENT") === "CORPORATION";
+    /** 법인 연관 거래는 10% 상한 없음 */
+    const maxPerTransfer =
+      fromIsCorp || toIsCorp || (isP2P && fairMode)
+        ? fromBalance
+        : maxAmountPerTransfer(fromBalance, dp);
+    if (amount > maxPerTransfer) {
+      const msg =
+        fromIsCorp || toIsCorp || (isP2P && fairMode)
+          ? `송금 금액이 잔액을 초과할 수 없습니다. (최대 ${maxPerTransfer} 클로버)`
+          : `한 번에 보낼 수 있는 최대액은 현재 잔액의 10%입니다. (최대 ${maxPerTransfer} 클로버, 여러 번 나누어 보낼 수 있어요)`;
+      return NextResponse.json({ ok: false, message: msg }, { status: 400 });
     }
 
     const toBalance = toQuery.data.balance ?? 0;
@@ -310,7 +375,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const txType = isContribution ? "contribution" : "transfer";
+  const txType = isContribution
+    ? "contribution"
+    : isVaultDeposit
+      ? "vault_deposit"
+      : "transfer";
   const shouldInsertMainTx = !isContribution || contributionToGoal > 0;
   const txResult = shouldInsertMainTx
     ? await insertTransaction(supabase, {
@@ -323,7 +392,11 @@ export async function POST(request: Request) {
       })
     : { ok: true as const };
 
-  const baseMessage = isContribution ? "기부가 완료되었습니다." : "송금이 완료되었습니다.";
+  const baseMessage = isContribution
+    ? "기부가 완료되었습니다."
+    : isVaultDeposit
+      ? "중앙 금고로 송금이 완료되었습니다."
+      : "송금이 완료되었습니다.";
   const fullMessage =
     isContribution && cappedMessage ? baseMessage + cappedMessage : baseMessage;
 

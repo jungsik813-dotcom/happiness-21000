@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { getVaultBranding } from "@/lib/vault-settings";
 
-export const metadata: Metadata = {
-  title: "2100 행복 시스템",
-  description: "Next.js + Tailwind + Supabase 기반 학급 경제 앱"
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const b = await getVaultBranding();
+  return {
+    title: b.site_title,
+    description: b.site_meta_description
+  };
+}
 
 export default function RootLayout({
   children

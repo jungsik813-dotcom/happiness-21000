@@ -8,6 +8,9 @@ import {
   TOTAL_SUPPLY
 } from "@/lib/issuance-schedule";
 import { WEALTH_TAX_RATE } from "@/lib/constants";
+import { roundToDecimalPlaces } from "@/lib/money";
+import type { DecimalPlaces } from "@/lib/money";
+import { normalizeDecimalPlaces } from "@/lib/vault-settings";
 import { splitGoalFunding } from "@/lib/goal-funding";
 
 const WEALTH_TAX_PERCENT_LABEL = `${Math.round(WEALTH_TAX_RATE * 100)}%`;
@@ -18,6 +21,7 @@ type VaultRow = {
   central_balance: number | null;
   issuance_total: number | null;
   issuance_count: number | null;
+  decimal_places?: number | null;
 };
 type GoalRow = { id: string; name: string; current_amount: number; target_amount: number };
 
@@ -35,7 +39,7 @@ export async function POST(request: Request) {
 
   const [profilesRes, vaultRes, activeGoalRes] = await Promise.all([
     supabase.from("profiles").select("id, name, balance").order("name"),
-    supabase.from("vault").select("id, central_balance, issuance_total, issuance_count").limit(1).single<VaultRow>(),
+    supabase.from("vault").select("id, central_balance, issuance_total, issuance_count, decimal_places").limit(1).single<VaultRow>(),
     supabase.from("goals").select("id, name, current_amount, target_amount").eq("is_active", true).limit(1).maybeSingle<GoalRow>()
   ]);
 
@@ -52,7 +56,11 @@ export async function POST(request: Request) {
   let issuanceCount = 0;
 
   if (vaultRes.error || !vaultRes.data) {
-    const fallback = await supabase.from("vault").select("id, central_balance").limit(1).single<{ id: string; central_balance: number | null }>();
+    const fallback = await supabase
+      .from("vault")
+      .select("id, central_balance, decimal_places")
+      .limit(1)
+      .single<{ id: string; central_balance: number | null; decimal_places: number | null }>();
     if (fallback.error || !fallback.data) {
       return NextResponse.json(
         { ok: false, message: `중앙 금고 오류: ${vaultRes.error?.message ?? "vault 테이블 또는 issuance_total, issuance_count 컬럼을 확인하세요. Supabase에서 마이그레이션 SQL을 실행했나요?"}` },
@@ -65,7 +73,8 @@ export async function POST(request: Request) {
     issuanceTotal = Number(vault.issuance_total ?? 0);
     issuanceCount = Number(vault.issuance_count ?? 0);
   }
-  let vaultBalance = vault.central_balance ?? 0;
+  const dp = normalizeDecimalPlaces(vault.decimal_places) as DecimalPlaces;
+  let vaultBalance = Number(vault.central_balance ?? 0);
   const activeGoal = activeGoalRes.data;
 
   if (profiles.length === 0) {
@@ -101,8 +110,8 @@ export async function POST(request: Request) {
   const taxDestination = activeGoal ?? null;
 
   for (const profile of profiles) {
-    const balance = profile.balance ?? 0;
-    const tax = Math.floor(balance * WEALTH_TAX_RATE);
+    const balance = Number(profile.balance ?? 0);
+    const tax = roundToDecimalPlaces(balance * WEALTH_TAX_RATE, dp);
     if (tax <= 0) continue;
 
     const newBalance = balance - tax;
@@ -161,7 +170,7 @@ export async function POST(request: Request) {
     const g = goalFresh.data;
     const current = g.current_amount ?? 0;
     const target = g.target_amount ?? 0;
-    const split = splitGoalFunding(current, target, totalTax);
+    const split = splitGoalFunding(current, target, totalTax, dp);
 
     if (split.needsStaleCompletion) {
       if (current > 0) {
@@ -348,7 +357,7 @@ export async function POST(request: Request) {
       const g = activeNow.data;
       const current = g.current_amount ?? 0;
       const target = g.target_amount ?? 0;
-      const split = splitGoalFunding(current, target, remainder);
+      const split = splitGoalFunding(current, target, remainder, dp);
 
       if (split.needsStaleCompletion) {
         if (current > 0) {

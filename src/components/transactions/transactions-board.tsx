@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { CURRENCY } from "@/lib/constants";
+import { formatCloverAmount } from "@/lib/money";
+import type { DecimalPlaces } from "@/lib/money";
 
 const TX_TYPE_LABELS: Record<string, string> = {
   transfer: "송금",
@@ -12,6 +14,10 @@ const TX_TYPE_LABELS: Record<string, string> = {
   tax_deposit: "세금 적립",
   mining_remainder: "클로버 씨앗 나머지",
   vault_transfer: "중앙 금고 송금",
+  vault_deposit: "학생→중앙 금고",
+  dividend: "법인 배당",
+  dividend_tax: "법인 배당 세금",
+  funding_overflow: "펀딩 초과·중앙 금고",
   etc: "기타"
 };
 
@@ -31,11 +37,8 @@ type TransactionItem = {
 
 type TransactionsBoardProps = {
   transactions: TransactionItem[];
+  decimalPlaces?: DecimalPlaces;
 };
-
-function toWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
 
 function formatDate(iso: string | null) {
   if (!iso) return "시간 정보 없음";
@@ -52,7 +55,10 @@ function formatDate(iso: string | null) {
   return `${month}.${day} ${hour}:${minute}`;
 }
 
-export default function TransactionsBoard({ transactions }: TransactionsBoardProps) {
+export default function TransactionsBoard({
+  transactions,
+  decimalPlaces = 0
+}: TransactionsBoardProps) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [keyword, setKeyword] = useState("");
 
@@ -93,6 +99,10 @@ export default function TransactionsBoard({ transactions }: TransactionsBoardPro
             <option value="tax_deposit">세금 적립</option>
             <option value="mining_remainder">클로버 씨앗 나머지</option>
             <option value="vault_transfer">중앙 금고 송금</option>
+            <option value="vault_deposit">학생→중앙 금고</option>
+            <option value="dividend">법인 배당</option>
+            <option value="dividend_tax">법인 배당 세금</option>
+            <option value="funding_overflow">펀딩 초과·중앙 금고</option>
             <option value="etc">기타</option>
           </select>
         </label>
@@ -123,7 +133,9 @@ export default function TransactionsBoard({ transactions }: TransactionsBoardPro
                 <p className="text-xs uppercase tracking-[0.16em] text-orange-300">
                   {getTxTypeLabel(item.txType)}
                 </p>
-                <p className="mt-1 text-lg font-bold text-orange-400">{toWon(item.amount)} {CURRENCY}</p>
+                <p className="mt-1 text-lg font-bold text-orange-400">
+                  {formatCloverAmount(item.amount, decimalPlaces)} {CURRENCY}
+                </p>
               </div>
               <p className="text-xs text-gray-400">{formatDate(item.createdAt)}</p>
             </div>

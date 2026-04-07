@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { CURRENCY } from "@/lib/constants";
+import { formatCloverAmount } from "@/lib/money";
+import type { DecimalPlaces } from "@/lib/money";
 
 type TimelineItem = {
   fromName: string;
@@ -13,11 +15,8 @@ type TimelineItem = {
 
 type PraiseTimelineProps = {
   items: TimelineItem[];
+  decimalPlaces?: DecimalPlaces;
 };
-
-function toWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
 
 function formatDate(iso: string | null) {
   if (!iso) return "";
@@ -30,7 +29,7 @@ function formatDate(iso: string | null) {
   return `${month}.${day} ${hour}:${minute}`;
 }
 
-export default function PraiseTimeline({ items }: PraiseTimelineProps) {
+export default function PraiseTimeline({ items, decimalPlaces = 0 }: PraiseTimelineProps) {
   const displayItems = items.slice(0, 3);
 
   if (displayItems.length === 0) {
@@ -74,7 +73,7 @@ export default function PraiseTimeline({ items }: PraiseTimelineProps) {
               &ldquo;{item.praise}&rdquo;
             </p>
             <p className="mt-1 text-sm font-bold text-orange-300">
-              {toWon(item.amount)} {CURRENCY}
+              {formatCloverAmount(item.amount, decimalPlaces)} {CURRENCY}
             </p>
           </article>
         ))}

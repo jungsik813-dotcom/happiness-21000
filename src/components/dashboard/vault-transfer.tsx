@@ -4,23 +4,29 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAdmin } from "@/components/admin/admin-provider";
 import AdminGate from "@/components/admin/admin-gate";
+import { amountInputStep, formatCloverAmount, roundToDecimalPlaces } from "@/lib/money";
+import type { DecimalPlaces } from "@/lib/money";
 
 const GOAL_PREFIX = "goal-";
 
 type Profile = { id: string; name: string };
 type Goal = { id: string; name: string; is_active: boolean };
 
-function toWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
 type VaultTransferProps = {
   vaultBalance: number;
   profiles: Profile[];
   goals: Goal[];
+  decimalPlaces?: DecimalPlaces;
 };
 
-export default function VaultTransfer({ vaultBalance, profiles, goals }: VaultTransferProps) {
+export default function VaultTransfer({
+  vaultBalance,
+  profiles,
+  goals,
+  decimalPlaces = 0
+}: VaultTransferProps) {
+  const dp = decimalPlaces;
+  const fc = (v: number) => formatCloverAmount(v, dp);
   const router = useRouter();
   const { token, logout } = useAdmin();
   const [expanded, setExpanded] = useState(false);
@@ -36,13 +42,13 @@ export default function VaultTransfer({ vaultBalance, profiles, goals }: VaultTr
   ];
 
   async function handleTransfer() {
-    const amt = Number(amount);
+    const amt = roundToDecimalPlaces(Number(amount), dp);
     if (!toRecipient || Number.isNaN(amt) || amt <= 0) {
       setMessage({ text: "받는 대상과 금액을 입력해주세요.", isError: true });
       return;
     }
-    if (amt > vaultBalance) {
-      setMessage({ text: `잔액이 부족합니다. (현재 ${toWon(vaultBalance)} 클로버)`, isError: true });
+    if (amt > vaultBalance + 1e-9) {
+      setMessage({ text: `잔액이 부족합니다. (현재 ${fc(vaultBalance)} 클로버)`, isError: true });
       return;
     }
 
@@ -103,7 +109,7 @@ export default function VaultTransfer({ vaultBalance, profiles, goals }: VaultTr
         {expanded && (
           <div className="mt-3 space-y-3 rounded-lg border border-orange-400/20 bg-slate-900/50 p-4">
             <p className="text-xs text-gray-400">
-              잔액: <span className="font-semibold text-orange-400">{toWon(vaultBalance)} 클로버</span>
+              잔액: <span className="font-semibold text-orange-400">{fc(vaultBalance)} 클로버</span>
             </p>
             <div>
               <label className="mb-1 block text-xs text-gray-400">받는 대상</label>
@@ -127,12 +133,13 @@ export default function VaultTransfer({ vaultBalance, profiles, goals }: VaultTr
               <label className="mb-1 block text-xs text-gray-400">송금 금액 (클로버)</label>
               <input
                 type="number"
-                min={1}
+                min={dp === 0 ? 1 : 0.01}
                 max={vaultBalance}
+                step={amountInputStep(dp)}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400"
-                placeholder="예: 100"
+                placeholder={dp === 0 ? "예: 100" : dp === 1 ? "예: 10.5" : "예: 1.25"}
               />
             </div>
             {message && (

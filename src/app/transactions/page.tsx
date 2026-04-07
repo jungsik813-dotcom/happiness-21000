@@ -1,6 +1,8 @@
 import Link from "next/link";
 import TransactionsBoard from "@/components/transactions/transactions-board";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getVaultBranding } from "@/lib/vault-settings";
+import type { DecimalPlaces } from "@/lib/money";
 
 type ProfileRow = {
   id: string;
@@ -44,10 +46,16 @@ type GoalRow = { id: string; name: string };
 
 export default async function TransactionsPage() {
   const supabase = await createSupabaseServerClient();
+  const branding = await getVaultBranding();
+  const displayDp = branding.decimal_places as DecimalPlaces;
 
   const [profilesQuery, txQuery, goalsQuery] = await Promise.all([
     supabase.from("profiles").select("id, name"),
-    supabase.from("transactions").select("*").limit(500),
+    supabase
+      .from("transactions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500),
     supabase.from("goals").select("id, name")
   ]);
 
@@ -105,6 +113,9 @@ export default async function TransactionsPage() {
       } else {
         toName = toId ? profileMap.get(toId) ?? "알 수 없음" : "시스템";
       }
+      if ((txType === "vault_deposit" || txType === "funding_overflow") && !toGoalId && !toId) {
+        toName = "중앙 금고";
+      }
 
       if (fromNameFromRow) fromName = fromNameFromRow;
       if (toNameFromRow && !toGoalId) toName = toNameFromRow;
@@ -157,7 +168,7 @@ export default async function TransactionsPage() {
           거래내역을 불러오지 못했습니다. transactions 테이블/RLS를 확인해주세요.
         </section>
       ) : (
-        <TransactionsBoard transactions={items} />
+        <TransactionsBoard transactions={items} decimalPlaces={displayDp} />
       )}
     </main>
   );

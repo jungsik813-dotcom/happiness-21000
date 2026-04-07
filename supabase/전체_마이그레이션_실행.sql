@@ -80,6 +80,12 @@ UPDATE profiles SET password_hash = '9af15b336e6a9619928537df30b2e6a2376569fcf9d
 ALTER TABLE vault ADD COLUMN IF NOT EXISTS transfer_hours_enforced boolean DEFAULT true;
 UPDATE vault SET transfer_hours_enforced = COALESCE(transfer_hours_enforced, true);
 
+-- ========== 006 사이트 문구·소수·numeric(상세는 migrations/006_site_settings_numeric_fk.sql 참고) ==========
+-- Supabase SQL Editor에서 supabase/migrations/006_site_settings_numeric_fk.sql 전체를 실행하세요.
+
+-- ========== 007 법인/배당/지분(상세는 migrations/007_corporation_dividend.sql 참고) ==========
+-- Supabase SQL Editor에서 supabase/migrations/007_corporation_dividend.sql 전체를 실행하세요.
+
 -- ========== 학생 추가 (이름 수정 후 사용, 최초 1회만) ==========
 INSERT INTO profiles (name, balance) VALUES
   ('김철수', 0),

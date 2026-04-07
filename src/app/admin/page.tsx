@@ -1,16 +1,17 @@
-import Link from "next/link";
 import { AdminProvider } from "@/components/admin/admin-provider";
 import AdminBackLink from "@/components/admin/admin-back-link";
 import AdminGate from "@/components/admin/admin-gate";
-import AdminSection from "@/components/dashboard/admin-section";
-import VaultTransfer from "@/components/dashboard/vault-transfer";
+import AdminSidebarDashboard from "@/components/admin/admin-sidebar-dashboard";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank";
+import type { DecimalPlaces } from "@/lib/money";
+import { getVaultBranding, normalizeDecimalPlaces } from "@/lib/vault-settings";
 
 type ProfileRow = {
   id: string;
   name: string | null;
   balance: number | null;
+  account_type?: string | null;
 };
 
 type VaultRow = {
@@ -20,6 +21,7 @@ type VaultRow = {
   issuance_count: number | null;
   fair_mode?: boolean | null;
   transfer_hours_enforced?: boolean | null;
+  decimal_places?: number | null;
 };
 
 type GoalRow = {
@@ -30,18 +32,17 @@ type GoalRow = {
   is_active: boolean;
 };
 
-function toWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
 export default async function AdminPage() {
   const supabase = await createSupabaseServerClient();
+  const branding = await getVaultBranding();
 
   const [profilesQuery, vaultQuery, goalsQuery, txQuery] = await Promise.all([
-    supabase.from("profiles").select("id, name, balance").order("name"),
+    supabase.from("profiles").select("id, name, balance, account_type").order("name"),
     supabase
       .from("vault")
-      .select("id, central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced")
+      .select(
+        "id, central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced, decimal_places"
+      )
       .limit(1)
       .maybeSingle<VaultRow>(),
     supabase
@@ -51,17 +52,23 @@ export default async function AdminPage() {
     supabase.from("transactions").select("from_profile_id, to_goal_id, amount, tx_type, type").limit(2000)
   ]);
 
-  const profiles = ((profilesQuery.data as ProfileRow[] | null) ?? []).map((p) => ({
+  const profilesAll = ((profilesQuery.data as ProfileRow[] | null) ?? []).map((p) => ({
     id: p.id,
     name: p.name?.trim() || "이름 없음",
-    balance: p.balance ?? 0
+    balance: p.balance ?? 0,
+    account_type: p.account_type ?? "STUDENT"
   }));
+  const students = profilesAll.filter((p) => p.account_type === "STUDENT");
+  const corporations = profilesAll.filter((p) => p.account_type === "CORPORATION");
 
-  const vaultBalance = vaultQuery.data?.central_balance ?? 0;
+  const vaultBalance = Number(vaultQuery.data?.central_balance ?? 0);
   const issuanceTotal = Number(vaultQuery.data?.issuance_total ?? 0);
   const issuanceCount = Number(vaultQuery.data?.issuance_count ?? 0);
   const fairMode = Boolean(vaultQuery.data?.fair_mode ?? false);
   const transferHoursEnforced = vaultQuery.data?.transfer_hours_enforced ?? true;
+  const displayDp = normalizeDecimalPlaces(
+    vaultQuery.data?.decimal_places ?? branding.decimal_places
+  ) as DecimalPlaces;
 
   const goalsRaw = Array.isArray(goalsQuery.data) ? goalsQuery.data : (goalsQuery.data ?? []);
   const goals = goalsRaw
@@ -74,7 +81,7 @@ export default async function AdminPage() {
       is_active: Boolean(g.is_active)
     }));
 
-  const profileMap = new Map(profiles.map((p) => [p.id, p.name]));
+  const profileMap = new Map(profilesAll.map((p) => [p.id, p.name]));
   const contributionRows = (txQuery.data as Array<Record<string, unknown>> | null) ?? [];
   const contributionsByGoal = new Map<
     string,
@@ -130,7 +137,6 @@ export default async function AdminPage() {
     burnedByGoal.set(toGoalId, (burnedByGoal.get(toGoalId) ?? 0) + amount);
   }
   const totalBurned = [...burnedByGoal.values()].reduce((a, b) => a + b, 0);
-  const circulating = Math.max(0, issuanceTotal - totalBurned);
 
   return (
     <AdminProvider>
@@ -156,37 +162,20 @@ export default async function AdminPage() {
             </section>
           }
         >
-          <section className="mb-8 rounded-2xl border border-orange-400/40 bg-slate-900/80 p-6 shadow-[0_0_32px_rgba(247,147,26,0.15)]">
-            <p className="text-xs uppercase tracking-[0.2em] text-orange-300">21,000 행복 중앙 금고</p>
-            <p className="mt-2 text-3xl font-extrabold text-orange-400 md:text-5xl">
-              누적 발행: {toWon(issuanceTotal)} / 21,000 클로버 ({issuanceCount}회차)
-            </p>
-            <p className="mt-2 text-sm text-gray-400">중앙 금고 잔액 {toWon(vaultBalance)} 클로버</p>
-            <p className="mt-3 rounded-lg border border-white/10 bg-slate-800/50 px-4 py-2 text-sm">
-              <span className="text-gray-400">현재 유통중:</span>{" "}
-              <span className="font-bold text-orange-400">{toWon(circulating)} 클로버</span>
-              <span className="ml-2 text-xs text-gray-500">(누적 발행 − 소각)</span>
-            </p>
-            <VaultTransfer
-              vaultBalance={vaultBalance}
-              profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
-              goals={goals.map((g) => ({ id: g.id, name: g.name, is_active: g.is_active }))}
-            />
-            <Link
-              href="/transactions"
-              className="mt-4 inline-block rounded-md border border-orange-400/50 px-4 py-2 text-sm font-semibold text-orange-300 transition hover:bg-orange-500/10"
-            >
-              거래내역 보기
-            </Link>
-          </section>
-
-          <AdminSection
+          <AdminSidebarDashboard
+            students={students.map((p) => ({ id: p.id, name: p.name }))}
+            corporations={corporations.map((p) => ({ id: p.id, name: p.name }))}
             goals={goals}
-            students={profiles.map((p) => ({ id: p.id, name: p.name }))}
             contributions={contributions}
             burnedByGoal={Object.fromEntries(burnedByGoal.entries())}
             fairMode={fairMode}
             transferHoursEnforced={transferHoursEnforced}
+            displayDp={displayDp}
+            initialSiteTitle={branding.site_title}
+            initialSiteSubtitle={branding.site_subtitle}
+            vaultBalance={vaultBalance}
+            issuanceTotal={issuanceTotal}
+            issuanceCount={issuanceCount}
           />
         </AdminGate>
       </main>

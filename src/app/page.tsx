@@ -1,5 +1,8 @@
 import MainHeader from "@/components/layout/main-header";
 import { CURRENCY } from "@/lib/constants";
+import { formatCloverAmount } from "@/lib/money";
+import type { DecimalPlaces } from "@/lib/money";
+import { getVaultBranding, normalizeDecimalPlaces } from "@/lib/vault-settings";
 import StudentGrid from "@/components/dashboard/student-grid";
 import FundingGoalsDisplay from "@/components/dashboard/funding-goals-display";
 import PraiseTimeline from "@/components/dashboard/praise-timeline";
@@ -11,6 +14,7 @@ type ProfileRow = {
   id: string;
   name: string | null;
   balance: number | null;
+  account_type?: string | null;
 };
 
 type VaultRow = {
@@ -19,6 +23,7 @@ type VaultRow = {
   issuance_count: number | null;
   fair_mode?: boolean | null;
   transfer_hours_enforced?: boolean | null;
+  decimal_places?: number | null;
 };
 
 type GoalRow = {
@@ -29,18 +34,18 @@ type GoalRow = {
   is_active: boolean;
 };
 
-function toWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
 export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
+  const branding = await getVaultBranding();
+  const dp = branding.decimal_places as DecimalPlaces;
 
   const [profilesQuery, vaultQuery, goalsQuery, txQuery] = await Promise.all([
-    supabase.from("profiles").select("id, name, balance").order("name"),
+    supabase.from("profiles").select("id, name, balance, account_type").order("name"),
     supabase
       .from("vault")
-      .select("central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced")
+      .select(
+        "central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced, decimal_places"
+      )
       .limit(1)
       .maybeSingle<VaultRow>(),
     supabase
@@ -55,7 +60,8 @@ export default async function HomePage() {
     (profile) => ({
       id: profile.id,
       name: profile.name?.trim() || "이름 없음",
-      balance: profile.balance ?? 0
+      balance: profile.balance ?? 0,
+      account_type: profile.account_type ?? "STUDENT"
     })
   );
 
@@ -64,6 +70,7 @@ export default async function HomePage() {
   const vaultBalance = Number(vaultQuery.data?.central_balance ?? 0);
   const fairMode = Boolean(vaultQuery.data?.fair_mode ?? false);
   const transferHoursEnforced = vaultQuery.data?.transfer_hours_enforced ?? true;
+  const displayDp = normalizeDecimalPlaces(vaultQuery.data?.decimal_places ?? dp) as DecimalPlaces;
 
   const goals = goalsRaw
     .filter((g) => g && typeof g.id === "string")
@@ -154,7 +161,9 @@ export default async function HomePage() {
     burnedByGoal.set(toGoalId, (burnedByGoal.get(toGoalId) ?? 0) + amount);
   }
   const totalBurned = [...burnedByGoal.values()].reduce((a, b) => a + b, 0);
-  const circulating = Math.max(0, issuanceTotal - totalBurned);
+  const totalProfileBalances = profiles.reduce((sum, p) => sum + Number(p.balance ?? 0), 0);
+  const totalGoalBalances = goals.reduce((sum, g) => sum + Number(g.current_amount ?? 0), 0);
+  const circulating = Math.max(0, totalProfileBalances + vaultBalance + totalGoalBalances);
 
   const hasError = Boolean(profilesQuery.error || vaultQuery.error);
   const errorDetails: string[] = [];
@@ -163,14 +172,14 @@ export default async function HomePage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
-      <MainHeader />
+      <MainHeader title={branding.site_title} subtitle={branding.site_subtitle} />
 
       <section className="mb-8 rounded-2xl border border-orange-400/40 bg-slate-900/80 p-6 shadow-[0_0_32px_rgba(247,147,26,0.15)]">
         <p className="text-xs uppercase tracking-[0.2em] text-orange-300">
           누적 발행
         </p>
         <p className="mt-2 text-3xl font-extrabold text-orange-400 md:text-5xl">
-          {toWon(issuanceTotal)} / 21,000 {CURRENCY} ({issuanceCount}회차)
+          {formatCloverAmount(issuanceTotal, displayDp)} / 21,000 {CURRENCY} ({issuanceCount}회차)
         </p>
         <p className="mt-2 text-sm text-gray-400">
           학급 클로버 총발행량을 한눈에 확인하세요.
@@ -178,13 +187,25 @@ export default async function HomePage() {
         <p className="mt-2 text-sm text-gray-400">
           중앙 금고 잔액{" "}
           <span className="font-semibold text-orange-300">
-            {toWon(vaultBalance)} {CURRENCY}
+            {formatCloverAmount(vaultBalance, displayDp)} {CURRENCY}
           </span>
         </p>
         <p className="mt-3 rounded-lg border border-white/10 bg-slate-800/50 px-4 py-2 text-sm">
           <span className="text-gray-400">현재 유통중:</span>{" "}
-          <span className="font-bold text-orange-400">{toWon(circulating)} {CURRENCY}</span>
-          <span className="ml-2 text-xs text-gray-500">(누적 발행 − 소각)</span>
+          <span className="font-bold text-orange-400">
+            {formatCloverAmount(circulating, displayDp)} {CURRENCY}
+          </span>
+          <span className="ml-2 text-xs text-gray-500">(실잔액 합계 기준)</span>
+        </p>
+        <p className="mt-2 rounded-lg border border-white/10 bg-slate-800/30 px-4 py-2 text-xs text-gray-400">
+          정책 지표: 누적 소각{" "}
+          <span className="font-semibold text-orange-300">
+            {formatCloverAmount(totalBurned, displayDp)} {CURRENCY}
+          </span>{" "}
+          / 누적 발행 대비 이론 유통{" "}
+          <span className="font-semibold text-gray-200">
+            {formatCloverAmount(Math.max(0, issuanceTotal - totalBurned), displayDp)} {CURRENCY}
+          </span>
         </p>
         <Link
           href="/transactions"
@@ -198,9 +219,10 @@ export default async function HomePage() {
         goals={goals}
         contributions={contributions}
         burnedByGoal={Object.fromEntries(burnedByGoal.entries())}
+        decimalPlaces={displayDp}
       />
 
-      <PraiseTimeline items={praiseTimelineItems} />
+      <PraiseTimeline items={praiseTimelineItems} decimalPlaces={displayDp} />
 
       {hasError ? (
         <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
@@ -221,6 +243,7 @@ export default async function HomePage() {
           goals={goals}
           fairMode={fairMode}
           transferHoursEnforced={transferHoursEnforced}
+          decimalPlaces={displayDp}
         />
       )}
     </main>

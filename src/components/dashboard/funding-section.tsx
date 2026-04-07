@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useAdmin } from "@/components/admin/admin-provider";
 import AdminGate from "@/components/admin/admin-gate";
 import { CURRENCY, WEALTH_TAX_RATE } from "@/lib/constants";
+import { formatCloverAmount } from "@/lib/money";
+import type { DecimalPlaces } from "@/lib/money";
 
 const WEALTH_TAX_PCT = Math.round(WEALTH_TAX_RATE * 100);
 import {
@@ -29,14 +31,11 @@ type GoalContributions = {
   byPerson: Array<{ id: string; name: string; amount: number; percent: number }>;
 };
 
-function toWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
 type FundingSectionProps = {
   goals: Goal[];
   contributions?: Record<string, GoalContributions>;
   burnedByGoal?: Record<string, number>;
+  decimalPlaces?: DecimalPlaces;
 };
 
 function WeeklyButton() {
@@ -86,7 +85,8 @@ function WeeklyButton() {
 export default function FundingSection({
   goals,
   contributions = {},
-  burnedByGoal = {}
+  burnedByGoal = {},
+  decimalPlaces = 0
 }: FundingSectionProps) {
   const activeGoals = sortGoalsByStudentContributionTotal(
     goals.filter((g) => g.is_active),
@@ -126,6 +126,7 @@ export default function FundingSection({
               key={goal.id}
               goal={goal}
               contributions={contributions[goal.id]}
+              decimalPlaces={decimalPlaces}
             />
           ))}
         </div>
@@ -141,6 +142,7 @@ export default function FundingSection({
                 goal={goal}
                 contributions={contributions[goal.id]}
                 burnedAmount={burnedByGoal[goal.id]}
+                decimalPlaces={decimalPlaces}
               />
             ))}
           </div>
@@ -152,10 +154,12 @@ export default function FundingSection({
 
 function ActiveGoalCard({
   goal,
-  contributions
+  contributions,
+  decimalPlaces
 }: {
   goal: Goal;
   contributions?: GoalContributions;
+  decimalPlaces: DecimalPlaces;
 }) {
   const [showContributors, setShowContributors] = useState(false);
   const progress = goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0;
@@ -164,8 +168,10 @@ function ActiveGoalCard({
     <article className="rounded-xl border border-orange-400/30 bg-slate-900/70 p-5 shadow-lg">
       <p className="text-sm font-semibold text-orange-300">{goal.name}</p>
       <p className="mt-2 text-2xl font-extrabold text-orange-400">
-        {toWon(goal.current_amount)}{" "}
-        <span className="text-lg font-normal text-gray-400">/ {toWon(goal.target_amount)} {CURRENCY}</span>
+        {formatCloverAmount(goal.current_amount, decimalPlaces)}{" "}
+        <span className="text-lg font-normal text-gray-400">
+          / {formatCloverAmount(goal.target_amount, decimalPlaces)} {CURRENCY}
+        </span>
       </p>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
         <div
@@ -192,6 +198,7 @@ function ActiveGoalCard({
             byPerson={contributions.byPerson}
             compact
             maxRows={ADMIN_RANK_ROWS}
+            decimalPlaces={decimalPlaces}
           />
         ) : showContributors ? (
           <p className="mt-1 text-xs text-gray-500">아직 학생 기부가 없습니다.</p>
@@ -204,29 +211,32 @@ function ActiveGoalCard({
 function CompletedGoalCard({
   goal,
   contributions,
-  burnedAmount
+  burnedAmount,
+  decimalPlaces
 }: {
   goal: Goal;
   contributions?: GoalContributions;
   burnedAmount?: number;
+  decimalPlaces: DecimalPlaces;
 }) {
+  const [showContributors, setShowContributors] = useState(false);
   const totalContributed = contributions?.total ?? 0;
 
   return (
     <article className="rounded-xl border border-slate-600/50 bg-slate-900/50 p-5 shadow-lg">
       <p className="text-sm font-semibold text-gray-400">✓ {goal.name}</p>
       <p className="mt-2 text-lg font-bold text-white">
-        목표 {toWon(goal.target_amount)} {CURRENCY} 달성
+        목표 {formatCloverAmount(goal.target_amount, decimalPlaces)} {CURRENCY} 달성
         {totalContributed > 0 && (
           <span className="ml-2 text-sm font-normal text-gray-400">
-            (학생 기부 {toWon(totalContributed)} {CURRENCY})
+            (학생 기부 {formatCloverAmount(totalContributed, decimalPlaces)} {CURRENCY})
           </span>
         )}
       </p>
       {(burnedAmount ?? 0) > 0 && (
         <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-950/30 px-3 py-2">
           <p className="text-sm font-semibold text-amber-400">
-            🔥 소각: {toWon(burnedAmount!)} {CURRENCY}
+            🔥 소각: {formatCloverAmount(burnedAmount!, decimalPlaces)} {CURRENCY}
           </p>
           <p className="text-xs text-gray-400">
             펀딩 완료로 유통에서 제거되었습니다.
@@ -234,12 +244,30 @@ function CompletedGoalCard({
         </div>
       )}
       <div className="mt-3 border-t border-white/10 pt-3">
-        <p className="mb-2 text-xs font-medium text-gray-400">기부 랭킹 (전체)</p>
-        {contributions ? (
-          <ContributionRankList byPerson={contributions.byPerson} maxRows={ADMIN_RANK_ROWS} />
-        ) : (
-          <p className="text-xs text-gray-500">기여 데이터가 없습니다.</p>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowContributors(!showContributors)}
+          className="flex w-full items-center justify-between text-left text-xs font-medium text-gray-300 hover:text-white"
+        >
+          기부 랭킹 (전체)
+          {contributions?.byPerson?.length
+            ? contributorRankButtonSuffix(contributions.byPerson.length, ADMIN_RANK_ROWS)
+            : ""}
+          <span className="text-gray-500">{showContributors ? "▲" : "▼"}</span>
+        </button>
+        {showContributors ? (
+          contributions ? (
+            <div className="mt-2">
+              <ContributionRankList
+                byPerson={contributions.byPerson}
+                maxRows={ADMIN_RANK_ROWS}
+                decimalPlaces={decimalPlaces}
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-gray-500">기여 데이터가 없습니다.</p>
+          )
+        ) : null}
       </div>
     </article>
   );

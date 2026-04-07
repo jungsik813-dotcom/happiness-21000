@@ -1,6 +1,11 @@
 import Link from "next/link";
 
-export default function MainHeader() {
+type MainHeaderProps = {
+  title: string;
+  subtitle: string;
+};
+
+export default function MainHeader({ title, subtitle }: MainHeaderProps) {
   return (
     <header className="mb-10 flex items-start justify-between gap-4 border-b border-white/10 pb-4">
       <div>
@@ -8,10 +13,10 @@ export default function MainHeader() {
           행복 장터
         </p>
         <h1 className="mt-2 text-3xl font-extrabold text-white md:text-5xl">
-          행복반 경제교육
+          {title}
         </h1>
         <p className="mt-3 text-sm text-gray-400 md:text-base">
-          칭찬과 함께 나누는 우리 반 클로버
+          {subtitle}
         </p>
       </div>
       <nav className="flex shrink-0 flex-wrap items-center justify-end gap-2">

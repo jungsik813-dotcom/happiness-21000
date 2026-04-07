@@ -2,10 +2,10 @@
 
 import GoalManager from "./goal-manager";
 import FundingSection from "./funding-section";
-import StudentPasswordReset from "./student-password-reset";
 import FairModeToggle from "./fair-mode-toggle";
 import BusinessHoursToggle from "./business-hours-toggle";
 import AdminGate from "@/components/admin/admin-gate";
+import type { DecimalPlaces } from "@/lib/money";
 
 export type Goal = {
   id: string;
@@ -27,24 +27,22 @@ export type GoalContributions = {
   byPerson: ContributionEntry[];
 };
 
-type Student = { id: string; name: string };
-
 type AdminSectionProps = {
   goals: Goal[];
-  students?: Student[];
   contributions?: Record<string, GoalContributions>;
   burnedByGoal?: Record<string, number>;
   fairMode?: boolean;
   transferHoursEnforced?: boolean;
+  decimalPlaces?: DecimalPlaces;
 };
 
 export default function AdminSection({
   goals,
-  students = [],
   contributions = {},
   burnedByGoal = {},
   fairMode = false,
-  transferHoursEnforced = true
+  transferHoursEnforced = true,
+  decimalPlaces = 0
 }: AdminSectionProps) {
   return (
     <>
@@ -58,12 +56,12 @@ export default function AdminSection({
         <FairModeToggle fairMode={fairMode} />
         <BusinessHoursToggle transferHoursEnforced={transferHoursEnforced} />
       </AdminGate>
-      <StudentPasswordReset students={students} />
       <GoalManager goals={goals} />
       <FundingSection
         goals={goals}
         contributions={contributions}
         burnedByGoal={burnedByGoal}
+        decimalPlaces={decimalPlaces}
       />
     </>
   );

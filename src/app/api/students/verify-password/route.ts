@@ -4,7 +4,13 @@ import { verifyStudentPassword } from "@/lib/student-auth";
 import { readJsonObject } from "@/lib/safe-json";
 import { isUuid } from "@/lib/validation";
 
-type ProfileRow = { id: string; name: string | null; balance: number | null; password_hash: string | null };
+type ProfileRow = {
+  id: string;
+  name: string | null;
+  balance: number | null;
+  password_hash: string | null;
+  account_type: string | null;
+};
 
 export async function POST(request: Request) {
   const parsed = await readJsonObject(request);
@@ -25,12 +31,12 @@ export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, name, balance, password_hash")
+    .select("id, name, balance, password_hash, account_type")
     .eq("id", studentId)
     .single<ProfileRow>();
 
   if (error || !data) {
-    return NextResponse.json({ ok: false, message: "학생을 찾을 수 없습니다." }, { status: 404 });
+    return NextResponse.json({ ok: false, message: "계정을 찾을 수 없습니다." }, { status: 404 });
   }
 
   if (!verifyStudentPassword(password, data.password_hash)) {
@@ -42,7 +48,8 @@ export async function POST(request: Request) {
     profile: {
       id: data.id,
       name: data.name ?? "이름 없음",
-      balance: data.balance ?? 0
+      balance: data.balance ?? 0,
+      accountType: data.account_type ?? "STUDENT"
     }
   });
 }

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { insertTransaction } from "@/lib/transactions";
 import { getAdminTokenFromRequest, verifyAdminToken } from "@/lib/admin-auth";
+import { parseCloverAmount } from "@/lib/validation";
+import { normalizeDecimalPlaces } from "@/lib/vault-settings";
+import type { DecimalPlaces } from "@/lib/money";
 import { splitGoalFunding } from "@/lib/goal-funding";
 
-type VaultRow = { id: string; central_balance: number | null };
+type VaultRow = { id: string; central_balance: number | null; decimal_places: number | null };
 type ProfileRow = { id: string; name: string | null; balance: number | null };
 type GoalRow = { id: string; name: string; current_amount: number; target_amount: number };
 
@@ -22,16 +25,15 @@ export async function POST(request: Request) {
     toStudentId?: string;
     toGoalId?: string;
   };
-  const amount = Number(body.amount ?? 0);
   const toStudentId = body.toStudentId?.trim() || null;
   const toGoalId = body.toGoalId?.trim() || null;
 
   const isToStudent = Boolean(toStudentId);
   const isToGoal = Boolean(toGoalId);
 
-  if (Number.isNaN(amount) || amount <= 0 || (!isToStudent && !isToGoal)) {
+  if (!isToStudent && !isToGoal) {
     return NextResponse.json(
-      { ok: false, message: "금액과 받는 대상을 확인해주세요." },
+      { ok: false, message: "받는 대상을 확인해주세요." },
       { status: 400 }
     );
   }
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
 
   const vaultRes = await supabase
     .from("vault")
-    .select("id, central_balance")
+    .select("id, central_balance, decimal_places")
     .limit(1)
     .single<VaultRow>();
 
@@ -52,7 +54,17 @@ export async function POST(request: Request) {
   }
 
   const vault = vaultRes.data;
-  const currentBalance = vault.central_balance ?? 0;
+  const dp = normalizeDecimalPlaces(vault.decimal_places) as DecimalPlaces;
+  const amountParsed = parseCloverAmount(body.amount, dp);
+  if (!amountParsed.ok) {
+    return NextResponse.json(
+      { ok: false, message: "금액을 확인해주세요." },
+      { status: 400 }
+    );
+  }
+  const amount = amountParsed.value;
+
+  const currentBalance = Number(vault.central_balance ?? 0);
 
   let deductFromVault = amount;
   let responseMessage = "";
@@ -117,7 +129,7 @@ export async function POST(request: Request) {
     const g = goalRes.data;
     const current = g.current_amount ?? 0;
     const target = g.target_amount ?? 0;
-    const split = splitGoalFunding(current, target, amount);
+    const split = splitGoalFunding(current, target, amount, dp);
     const outFromVault = split.toGoal;
     deductFromVault = outFromVault;
 

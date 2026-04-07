@@ -1,6 +1,8 @@
 "use client";
 
 import { CURRENCY } from "@/lib/constants";
+import { formatCloverAmount } from "@/lib/money";
+import type { DecimalPlaces } from "@/lib/money";
 
 /** 펀딩 목표별 기부자 명단에 표시할 최대 인원 (1위~10위) */
 export const CONTRIBUTION_LEADERBOARD_SIZE = 10;
@@ -12,15 +14,12 @@ export type ContributionPerson = {
   percent: number;
 };
 
-function toWon(value: number) {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
 type ContributionRankListProps = {
   byPerson: ContributionPerson[];
   compact?: boolean;
   /** 기본 10. 관리자 등에서 전체를 보려면 `Infinity` 또는 충분히 큰 수 */
   maxRows?: number;
+  decimalPlaces?: DecimalPlaces;
 };
 
 /** 학생 기부 총액이 많은 펀딩 목표가 먼저 오도록 정렬 */
@@ -51,7 +50,8 @@ export function contributorRankButtonSuffix(
 export function ContributionRankList({
   byPerson,
   compact = false,
-  maxRows = CONTRIBUTION_LEADERBOARD_SIZE
+  maxRows = CONTRIBUTION_LEADERBOARD_SIZE,
+  decimalPlaces = 0
 }: ContributionRankListProps) {
   if (byPerson.length === 0) {
     return <p className="text-xs text-gray-500">아직 학생 기부가 없습니다.</p>;
@@ -73,7 +73,7 @@ export function ContributionRankList({
             {p.name}
           </span>
           <span className="shrink-0 font-medium text-orange-400">
-            {toWon(p.amount)} {CURRENCY} ({p.percent.toFixed(1)}%)
+            {formatCloverAmount(p.amount, decimalPlaces)} {CURRENCY} ({p.percent.toFixed(1)}%)
           </span>
         </li>
       ))}

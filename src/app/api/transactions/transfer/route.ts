@@ -133,12 +133,6 @@ export async function POST(request: Request) {
   }
 
   const fromIsCorp = (fromQuery.data.account_type ?? "STUDENT") === "CORPORATION";
-  if (fromIsCorp) {
-    return NextResponse.json(
-      { ok: false, message: "법인 계정은 직접 송금할 수 없고, 지분 배당만 가능합니다." },
-      { status: 400 }
-    );
-  }
   if (!fromIsCorp && (isContribution || isVaultDeposit)) {
     const maxPerTransfer = maxAmountPerTransfer(fromBalance, dp);
     if (amount > maxPerTransfer) {

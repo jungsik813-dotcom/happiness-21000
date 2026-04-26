@@ -498,7 +498,7 @@ export default function StudentGrid({
                 <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 p-3">
                   <p className="text-sm font-semibold text-emerald-300">지분 배당 실행</p>
                   <p className="mt-1 text-xs text-gray-300">
-                    총 배당금의 10%는 자동 징수되고, 90%는 10주 지분대로 분배됩니다.
+                    총 배당금 전액이 10주 지분대로 분배됩니다. (배당 세금 없음)
                   </p>
                   {holdings.some((h) => h.shareCount > 0) && (
                     <p className="mt-1 text-xs text-gray-400">
@@ -545,7 +545,6 @@ export default function StudentGrid({
                   ⏰ {getTimeLockMessage(timeLockResult)}
                 </div>
               )}
-              {!selectedIsCorporation && (
               <div className="rounded-lg border border-white/10 bg-slate-800/80 p-3">
                 <p className="mb-2 text-sm font-semibold text-orange-300">송금/기부하기</p>
                 <label className="mb-2 block text-xs text-gray-400">받는 대상</label>
@@ -644,7 +643,6 @@ export default function StudentGrid({
                   {isSubmitting ? "송금 중..." : timeLockResult.allowed ? "송금 실행" : "영업 시간 아님"}
                 </button>
               </div>
-              )}
               <button
                 type="button"
                 onClick={() =>

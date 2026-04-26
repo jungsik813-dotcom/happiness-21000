@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 function splitDividend(totalCents) {
-  const tax = Math.floor(totalCents * 0.1);
-  return { tax, distributable: totalCents - tax };
+  return { tax: 0, distributable: totalCents };
 }
 
 function allocateByShares(distributableCents, shares) {
@@ -23,27 +22,27 @@ function allocateByShares(distributableCents, shares) {
 }
 
 function canCorporationTransfer(fromAccountType) {
-  return fromAccountType !== "CORPORATION";
+  return fromAccountType === "CORPORATION" || fromAccountType === "STUDENT";
 }
 
-test("dividend split keeps cents exact", () => {
+test("dividend split keeps full amount with no tax", () => {
   const { tax, distributable } = splitDividend(10001);
-  assert.equal(tax, 1000);
-  assert.equal(distributable, 9001);
+  assert.equal(tax, 0);
+  assert.equal(distributable, 10001);
   assert.equal(tax + distributable, 10001);
 });
 
-test("share allocation sums to distributable", () => {
-  const allocations = allocateByShares(9001, [
+test("share allocation sums to full dividend", () => {
+  const allocations = allocateByShares(10001, [
     { studentId: "a", shareCount: 6 },
     { studentId: "b", shareCount: 3 },
     { studentId: "c", shareCount: 1 }
   ]);
   const sum = allocations.reduce((acc, x) => acc + x.cents, 0);
-  assert.equal(sum, 9001);
+  assert.equal(sum, 10001);
 });
 
-test("corporation direct transfer is blocked", () => {
-  assert.equal(canCorporationTransfer("CORPORATION"), false);
+test("corporation direct transfer is allowed", () => {
+  assert.equal(canCorporationTransfer("CORPORATION"), true);
   assert.equal(canCorporationTransfer("STUDENT"), true);
 });

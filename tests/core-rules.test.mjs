@@ -25,6 +25,11 @@ function canCorporationTransfer(fromAccountType) {
   return fromAccountType === "CORPORATION" || fromAccountType === "STUDENT";
 }
 
+function maxTransferAllowed(balance, fairMode, fromIsCorp = false, toIsCorp = false) {
+  if (fromIsCorp || toIsCorp || fairMode) return balance;
+  return balance * 0.1;
+}
+
 test("dividend split keeps full amount with no tax", () => {
   const { tax, distributable } = splitDividend(10001);
   assert.equal(tax, 0);
@@ -45,4 +50,9 @@ test("share allocation sums to full dividend", () => {
 test("corporation direct transfer is allowed", () => {
   assert.equal(canCorporationTransfer("CORPORATION"), true);
   assert.equal(canCorporationTransfer("STUDENT"), true);
+});
+
+test("fair mode removes 10 percent cap for vault and goal", () => {
+  assert.equal(maxTransferAllowed(1000, true, false, false), 1000);
+  assert.equal(maxTransferAllowed(1000, false, false, false), 100);
 });

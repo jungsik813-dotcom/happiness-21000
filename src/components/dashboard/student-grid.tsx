@@ -25,7 +25,7 @@ type Goal = {
 type StudentGridProps = {
   students: Student[];
   goals?: Goal[];
-  /** 장터 모드 ON이면 학생 간 송금만 회당 잔액 전액까지 */
+  /** 장터 모드 ON이면 송금/기부 모두 회당 잔액 전액까지 */
   fairMode?: boolean;
   /** false면 평일 시간 제한 없이 송금 (관리자 설정) */
   transferHoursEnforced?: boolean;
@@ -160,13 +160,13 @@ export default function StudentGrid({
 
   const maxOnceThisTransfer = useMemo(() => {
     if (!selectedStudent) return 0;
-    const p2p = Boolean(toRecipient && !toRecipient.startsWith(GOAL_PREFIX));
     if ((selectedStudent.account_type ?? "STUDENT") === "CORPORATION") return selectedStudent.balance;
+    if (fairMode) return selectedStudent.balance;
+    const p2p = Boolean(toRecipient && !toRecipient.startsWith(GOAL_PREFIX));
     if (p2p) {
       const to = localStudents.find((s) => s.id === toRecipient);
       if ((to?.account_type ?? "STUDENT") === "CORPORATION") return selectedStudent.balance;
     }
-    if (p2p && fairMode) return selectedStudent.balance;
     return maxAmountPerTransfer(selectedStudent.balance, dp);
   }, [selectedStudent, toRecipient, fairMode, dp, localStudents]);
 
@@ -268,18 +268,14 @@ export default function StudentGrid({
     const isCorpSender = (sender.account_type ?? "STUDENT") === "CORPORATION";
     const toProfile = !isGoal && !isVault ? localStudents.find((s) => s.id === toRecipient) : null;
     const isCorpReceiver = (toProfile?.account_type ?? "STUDENT") === "CORPORATION";
-    const maxOnce = isCorpSender || isCorpReceiver
+    const maxOnce = isCorpSender || isCorpReceiver || fairMode
       ? sender.balance
-      : isGoal || isVault
-        ? maxAmountPerTransfer(sender.balance, dp)
-        : fairMode
-          ? sender.balance
-          : maxAmountPerTransfer(sender.balance, dp);
+      : maxAmountPerTransfer(sender.balance, dp);
     if (transferAmount > maxOnce + 1e-9) {
       showToast(
-        isGoal || !fairMode
-          ? `한 번에 최대 ${fc(maxOnce)} ${CURRENCY}(현재 잔액의 10%)까지 보낼 수 있어요.`
-          : `한 번에 최대 ${fc(maxOnce)} ${CURRENCY}(전액)까지 보낼 수 있어요.`,
+        fairMode
+          ? `한 번에 최대 ${fc(maxOnce)} ${CURRENCY}(전액)까지 보낼 수 있어요.`
+          : `한 번에 최대 ${fc(maxOnce)} ${CURRENCY}(현재 잔액의 10%)까지 보낼 수 있어요.`,
         "error"
       );
       return;
@@ -619,8 +615,8 @@ export default function StudentGrid({
                     <span className="font-medium text-orange-300/90">
                       {fc(maxOnceThisTransfer)} {CURRENCY}
                     </span>
-                    {isP2PToStudent && fairMode ? (
-                      <span> — 장터 모드: 친구에게는 잔액 전액까지 한 번에 보낼 수 있어요.</span>
+                    {fairMode ? (
+                      <span> — 장터 모드: 학생/중앙 금고/펀딩 모두 잔액 전액까지 한 번에 보낼 수 있어요.</span>
                     ) : (
                       <span>
                         {" "}

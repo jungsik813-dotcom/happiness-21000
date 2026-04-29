@@ -133,7 +133,7 @@ export async function POST(request: Request) {
   }
 
   const fromIsCorp = (fromQuery.data.account_type ?? "STUDENT") === "CORPORATION";
-  if (!fromIsCorp && (isContribution || isVaultDeposit)) {
+  if (!fromIsCorp && !fairMode && (isContribution || isVaultDeposit)) {
     const maxPerTransfer = maxAmountPerTransfer(fromBalance, dp);
     if (amount > maxPerTransfer) {
       return NextResponse.json(
@@ -326,12 +326,12 @@ export async function POST(request: Request) {
     const toIsCorp = (toQuery.data.account_type ?? "STUDENT") === "CORPORATION";
     /** 법인 연관 거래는 10% 상한 없음 */
     const maxPerTransfer =
-      fromIsCorp || toIsCorp || (isP2P && fairMode)
+      fromIsCorp || toIsCorp || fairMode
         ? fromBalance
         : maxAmountPerTransfer(fromBalance, dp);
     if (amount > maxPerTransfer) {
       const msg =
-        fromIsCorp || toIsCorp || (isP2P && fairMode)
+        fromIsCorp || toIsCorp || fairMode
           ? `송금 금액이 잔액을 초과할 수 없습니다. (최대 ${maxPerTransfer} 클로버)`
           : `한 번에 보낼 수 있는 최대액은 현재 잔액의 10%입니다. (최대 ${maxPerTransfer} 클로버, 여러 번 나누어 보낼 수 있어요)`;
       return NextResponse.json({ ok: false, message: msg }, { status: 400 });

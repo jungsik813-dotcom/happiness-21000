@@ -5,6 +5,7 @@ import AdminSidebarDashboard from "@/components/admin/admin-sidebar-dashboard";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank";
 import type { DecimalPlaces } from "@/lib/money";
+import { fetchTransactionsWithTypeFallback } from "@/lib/transactions";
 import { getVaultBranding, normalizeDecimalPlaces } from "@/lib/vault-settings";
 
 type ProfileRow = {
@@ -36,7 +37,7 @@ export default async function AdminPage() {
   const supabase = await createSupabaseServerClient();
   const branding = await getVaultBranding();
 
-  const [profilesQuery, vaultQuery, goalsQuery, txQuery] = await Promise.all([
+  const [profilesQuery, vaultQuery, goalsQuery, txResult] = await Promise.all([
     supabase.from("profiles").select("id, name, balance, account_type").order("name"),
     supabase
       .from("vault")
@@ -49,7 +50,7 @@ export default async function AdminPage() {
       .from("goals")
       .select("id, name, target_amount, current_amount, is_active")
       .order("created_at", { ascending: false }),
-    supabase.from("transactions").select("from_profile_id, to_goal_id, amount, tx_type, type").limit(2000)
+    fetchTransactionsWithTypeFallback(supabase, "from_profile_id, to_goal_id, amount")
   ]);
 
   const profilesAll = ((profilesQuery.data as ProfileRow[] | null) ?? []).map((p) => ({
@@ -82,7 +83,7 @@ export default async function AdminPage() {
     }));
 
   const profileMap = new Map(profilesAll.map((p) => [p.id, p.name]));
-  const contributionRows = (txQuery.data as Array<Record<string, unknown>> | null) ?? [];
+  const contributionRows = txResult.data;
   const contributionsByGoal = new Map<
     string,
     { total: number; byPerson: Array<{ id: string; name: string; amount: number; percent: number }> }

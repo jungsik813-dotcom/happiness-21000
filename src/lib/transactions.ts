@@ -63,3 +63,39 @@ export async function insertTransaction(
   }
   return { ok: false, error: lastError };
 }
+
+/**
+ * transactions 스키마가 `tx_type` 또는 `type` 중 하나만 있는 환경을 모두 지원한다.
+ */
+export async function fetchTransactionsWithTypeFallback(
+  supabase: SupabaseClient,
+  selectColumns: string,
+  limit: number = 2000
+): Promise<{ data: Array<Record<string, unknown>>; errorMessage?: string }> {
+  const txTypeQuery = await supabase
+    .from("transactions")
+    .select(`${selectColumns}, tx_type`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (!txTypeQuery.error) {
+    return { data: (txTypeQuery.data as Array<Record<string, unknown>> | null) ?? [] };
+  }
+
+  const legacyTypeQuery = await supabase
+    .from("transactions")
+    .select(`${selectColumns}, type`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (legacyTypeQuery.error) {
+    return { data: [], errorMessage: legacyTypeQuery.error.message };
+  }
+
+  const rows = ((legacyTypeQuery.data as Array<Record<string, unknown>> | null) ?? []).map((row) => ({
+    ...row,
+    tx_type: typeof row.type === "string" ? row.type : null
+  }));
+
+  return { data: rows };
+}

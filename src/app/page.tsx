@@ -8,6 +8,7 @@ import FundingGoalsDisplay from "@/components/dashboard/funding-goals-display";
 import PraiseTimeline from "@/components/dashboard/praise-timeline";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank";
+import { fetchTransactionsWithTypeFallback } from "@/lib/transactions";
 import Link from "next/link";
 
 type ProfileRow = {
@@ -39,7 +40,7 @@ export default async function HomePage() {
   const branding = await getVaultBranding();
   const dp = branding.decimal_places as DecimalPlaces;
 
-  const [profilesQuery, vaultQuery, goalsQuery, txQuery] = await Promise.all([
+  const [profilesQuery, vaultQuery, goalsQuery, txResult] = await Promise.all([
     supabase.from("profiles").select("id, name, balance, account_type").order("name"),
     supabase
       .from("vault")
@@ -52,7 +53,10 @@ export default async function HomePage() {
       .from("goals")
       .select("id, name, target_amount, current_amount, is_active")
       .order("created_at", { ascending: false }),
-    supabase.from("transactions").select("from_profile_id, to_profile_id, to_goal_id, amount, tx_type, type, memo, created_at").limit(2000)
+    fetchTransactionsWithTypeFallback(
+      supabase,
+      "from_profile_id, to_profile_id, to_goal_id, amount, memo, created_at"
+    )
   ]);
 
   const goalsRaw = Array.isArray(goalsQuery.data) ? goalsQuery.data : (goalsQuery.data ?? []);
@@ -83,7 +87,7 @@ export default async function HomePage() {
     }));
 
   const profileMap = new Map(profiles.map((p) => [p.id, p.name]));
-  const contributionRows = (txQuery.data as Array<Record<string, unknown>> | null) ?? [];
+  const contributionRows = txResult.data;
   const contributionsByGoal = new Map<
     string,
     { total: number; byPerson: Array<{ id: string; name: string; amount: number; percent: number }> }
@@ -165,10 +169,11 @@ export default async function HomePage() {
   const totalGoalBalances = goals.reduce((sum, g) => sum + Number(g.current_amount ?? 0), 0);
   const circulating = Math.max(0, totalProfileBalances + vaultBalance + totalGoalBalances);
 
-  const hasError = Boolean(profilesQuery.error || vaultQuery.error);
+  const hasError = Boolean(profilesQuery.error || vaultQuery.error || txResult.errorMessage);
   const errorDetails: string[] = [];
   if (profilesQuery.error) errorDetails.push(`profiles: ${profilesQuery.error.message}`);
   if (vaultQuery.error) errorDetails.push(`vault: ${vaultQuery.error.message}`);
+  if (txResult.errorMessage) errorDetails.push(`transactions: ${txResult.errorMessage}`);
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">

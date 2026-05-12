@@ -72,6 +72,11 @@ export async function fetchTransactionsWithTypeFallback(
   selectColumns: string,
   limit: number = 2000
 ): Promise<{ data: Array<Record<string, unknown>>; errorMessage?: string }> {
+  const toRecordRows = (value: unknown): Array<Record<string, unknown>> => {
+    if (!Array.isArray(value)) return [];
+    return value.filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null);
+  };
+
   const txTypeQuery = await supabase
     .from("transactions")
     .select(`${selectColumns}, tx_type`)
@@ -79,7 +84,7 @@ export async function fetchTransactionsWithTypeFallback(
     .limit(limit);
 
   if (!txTypeQuery.error) {
-    return { data: (txTypeQuery.data as Array<Record<string, unknown>> | null) ?? [] };
+    return { data: toRecordRows(txTypeQuery.data as unknown) };
   }
 
   const legacyTypeQuery = await supabase
@@ -92,7 +97,7 @@ export async function fetchTransactionsWithTypeFallback(
     return { data: [], errorMessage: legacyTypeQuery.error.message };
   }
 
-  const rows = ((legacyTypeQuery.data as Array<Record<string, unknown>> | null) ?? []).map((row) => ({
+  const rows = toRecordRows(legacyTypeQuery.data as unknown).map((row) => ({
     ...row,
     tx_type: typeof row.type === "string" ? row.type : null
   }));

@@ -4,6 +4,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getVaultBranding } from "@/lib/vault-settings";
 import type { DecimalPlaces } from "@/lib/money";
 
+export const dynamic = "force-dynamic";
+
 type ProfileRow = {
   id: string;
   name: string | null;
@@ -45,19 +47,38 @@ function pickString(row: RawTransaction, keys: string[]) {
 type GoalRow = { id: string; name: string };
 
 export default async function TransactionsPage() {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient().catch(() => null);
+  if (!supabase) {
+    return (
+      <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
+        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+          거래내역 데이터 클라이언트 초기화에 실패했습니다.
+        </section>
+      </main>
+    );
+  }
   const branding = await getVaultBranding();
   const displayDp = branding.decimal_places as DecimalPlaces;
 
-  const [profilesQuery, txQuery, goalsQuery] = await Promise.all([
-    supabase.from("profiles").select("id, name"),
-    supabase
-      .from("transactions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(500),
-    supabase.from("goals").select("id, name")
-  ]);
+  const queries = await Promise.all([
+      supabase.from("profiles").select("id, name"),
+      supabase
+        .from("transactions")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500),
+      supabase.from("goals").select("id, name")
+    ]).catch(() => null);
+  if (!queries) {
+    return (
+      <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
+        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+          거래내역 로딩 중 예외가 발생했습니다.
+        </section>
+      </main>
+    );
+  }
+  const [profilesQuery, txQuery, goalsQuery] = queries;
 
   const profileMap = new Map<string, string>();
   ((profilesQuery.data as ProfileRow[] | null) ?? []).forEach((profile) => {

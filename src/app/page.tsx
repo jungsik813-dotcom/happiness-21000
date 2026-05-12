@@ -11,6 +11,8 @@ import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank
 import { fetchTransactionsWithTypeFallback } from "@/lib/transactions";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 type ProfileRow = {
   id: string;
   name: string | null;
@@ -36,28 +38,47 @@ type GoalRow = {
 };
 
 export default async function HomePage() {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient().catch(() => null);
+  if (!supabase) {
+    return (
+      <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
+        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+          서버 데이터 클라이언트 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.
+        </section>
+      </main>
+    );
+  }
   const branding = await getVaultBranding();
   const dp = branding.decimal_places as DecimalPlaces;
 
-  const [profilesQuery, vaultQuery, goalsQuery, txResult] = await Promise.all([
-    supabase.from("profiles").select("id, name, balance, account_type").order("name"),
-    supabase
-      .from("vault")
-      .select(
-        "central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced, decimal_places"
+  const queries = await Promise.all([
+      supabase.from("profiles").select("id, name, balance, account_type").order("name"),
+      supabase
+        .from("vault")
+        .select(
+          "central_balance, issuance_total, issuance_count, fair_mode, transfer_hours_enforced, decimal_places"
+        )
+        .limit(1)
+        .maybeSingle<VaultRow>(),
+      supabase
+        .from("goals")
+        .select("id, name, target_amount, current_amount, is_active")
+        .order("created_at", { ascending: false }),
+      fetchTransactionsWithTypeFallback(
+        supabase,
+        "from_profile_id, to_profile_id, to_goal_id, amount, memo, created_at"
       )
-      .limit(1)
-      .maybeSingle<VaultRow>(),
-    supabase
-      .from("goals")
-      .select("id, name, target_amount, current_amount, is_active")
-      .order("created_at", { ascending: false }),
-    fetchTransactionsWithTypeFallback(
-      supabase,
-      "from_profile_id, to_profile_id, to_goal_id, amount, memo, created_at"
-    )
-  ]);
+    ]).catch(() => null);
+  if (!queries) {
+    return (
+      <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
+        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+          데이터 로딩 중 예외가 발생했습니다. 잠시 후 다시 시도해주세요.
+        </section>
+      </main>
+    );
+  }
+  const [profilesQuery, vaultQuery, goalsQuery, txResult] = queries;
 
   const goalsRaw = Array.isArray(goalsQuery.data) ? goalsQuery.data : (goalsQuery.data ?? []);
   const profiles = ((profilesQuery.data as ProfileRow[] | null) ?? []).map(

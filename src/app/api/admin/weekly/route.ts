@@ -15,7 +15,16 @@ import { splitGoalFunding } from "@/lib/goal-funding";
 
 const WEALTH_TAX_PERCENT_LABEL = `${Math.round(WEALTH_TAX_RATE * 100)}%`;
 
-type ProfileRow = { id: string; name: string | null; balance: number | null };
+type ProfileRow = {
+  id: string;
+  name: string | null;
+  balance: number | null;
+  account_type?: string | null;
+};
+
+function isStudentProfile(profile: ProfileRow) {
+  return (profile.account_type ?? "STUDENT") === "STUDENT";
+}
 type VaultRow = {
   id: string;
   central_balance: number | null;
@@ -38,7 +47,7 @@ export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
 
   const [profilesRes, vaultRes, activeGoalRes] = await Promise.all([
-    supabase.from("profiles").select("id, name, balance").order("name"),
+    supabase.from("profiles").select("id, name, balance, account_type").order("name"),
     supabase.from("vault").select("id, central_balance, issuance_total, issuance_count, decimal_places").limit(1).single<VaultRow>(),
     supabase.from("goals").select("id, name, current_amount, target_amount").eq("is_active", true).limit(1).maybeSingle<GoalRow>()
   ]);
@@ -50,7 +59,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const profiles = profilesRes.data as ProfileRow[];
+  const profiles = (profilesRes.data as ProfileRow[]).filter(isStudentProfile);
   let vault: VaultRow;
   let issuanceTotal = 0;
   let issuanceCount = 0;
@@ -494,7 +503,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    message: `주간 실행 완료. 보유세(${WEALTH_TAX_PERCENT_LABEL}) ${totalTax}클로버 징수, 클로버 씨앗 보상 ${miningAmount}클로버 지급 (${profiles.length}명 균등, 1인당 ${perStudent}클로버). 누적 발행: ${newIssuanceTotal}/21,000 클로버`
+    message: `주간 실행 완료. 보유세(${WEALTH_TAX_PERCENT_LABEL}) ${totalTax}클로버 징수(학생만), 클로버 씨앗 보상 ${miningAmount}클로버 지급 (학생 ${profiles.length}명 균등, 1인당 ${perStudent}클로버, 법인 제외). 누적 발행: ${newIssuanceTotal}/21,000 클로버`
   });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "알 수 없는 오류";

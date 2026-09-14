@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAdmin } from "@/components/admin/admin-provider";
 import AdminGate from "@/components/admin/admin-gate";
+import AdminCollapsible from "@/components/admin/admin-collapsible";
 
 type Student = { id: string; name: string };
 
@@ -90,23 +91,26 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
   }
 
   return (
-    <section className="mb-6 rounded-xl border border-white/10 bg-slate-900/50 p-4">
-      <h3 className="mb-3 text-sm font-bold text-orange-300">학생 비밀번호 설정</h3>
+    <AdminCollapsible
+      title="학생 비밀번호 설정"
+      description="학생 비밀번호를 새로 정하거나 0000으로 초기화합니다."
+      className="ui-card p-6"
+    >
       <AdminGate
         fallback={
-          <p className="rounded-lg border border-orange-400/30 bg-orange-500/10 px-4 py-3 text-center text-sm text-orange-300">
+          <p className="rounded-2xl border border-[#d7efe2] bg-[#f7fcf9] px-4 py-3 text-center text-sm text-[#5d7a6c]">
             🔒 관리자 전용입니다. 클릭하여 비밀번호를 입력하세요.
           </p>
         }
       >
         <div className="space-y-3">
           <div>
-            <label className="mb-2 block text-xs text-gray-400">학생 선택</label>
+            <label className="ui-label">학생 선택</label>
             <select
               value={selectedId}
               onChange={(e) => setSelectedId(e.target.value)}
               disabled={status === "loading"}
-              className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
+              className="ui-input disabled:opacity-60"
             >
               <option value="">학생 선택</option>
               {students.map((s) => (
@@ -117,7 +121,7 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
             </select>
           </div>
           <div>
-            <label className="mb-2 block text-xs text-gray-400">새 비밀번호 (4자리 숫자)</label>
+            <label className="ui-label">새 비밀번호 (4자리 숫자)</label>
             <input
               type="password"
               inputMode="numeric"
@@ -125,16 +129,16 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value.replace(/\D/g, "").slice(0, 4))}
               placeholder="0000"
-              className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
+              className="ui-input disabled:opacity-60"
               disabled={status === "loading"}
             />
           </div>
           {(status === "success" || status === "error") && (
             <p
-              className={`rounded-lg px-4 py-2 text-sm ${
+              className={`rounded-2xl px-4 py-2 text-sm ${
                 status === "success"
-                  ? "border border-green-500/40 bg-green-950/30 text-green-200"
-                  : "border border-red-500/40 bg-red-950/30 text-red-200"
+                  ? "border border-[#b9ebcf] bg-[#dff8ea] text-[#1f7a4a]"
+                  : "border border-red-200 bg-red-50 text-red-700"
               }`}
             >
               {message}
@@ -145,7 +149,7 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
               type="button"
               onClick={handleSetPassword}
               disabled={status === "loading" || !selectedId || newPassword.length !== 4}
-              className="rounded-md bg-orange-500/80 px-4 py-2 text-sm font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-btn-primary"
             >
               {status === "loading" ? "처리 중..." : "비밀번호 설정 (해시 저장)"}
             </button>
@@ -153,7 +157,7 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
               type="button"
               onClick={handleReset}
               disabled={status === "loading" || !selectedId}
-              className="rounded-md border border-white/30 px-4 py-2 text-sm font-medium text-gray-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-btn-secondary"
             >
               0000으로 초기화
             </button>
@@ -164,17 +168,17 @@ export default function StudentPasswordReset({ students }: StudentPasswordResetP
                   setStatus("idle");
                   setMessage("");
                 }}
-                className="rounded-md border border-white/20 px-4 py-2 text-sm text-gray-300"
+                className="ui-btn-secondary"
               >
                 닫기
               </button>
             )}
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[#9bb5a8]">
             비밀번호는 SHA-256 해시로 저장되며, 원문은 저장되지 않습니다.
           </p>
         </div>
       </AdminGate>
-    </section>
+    </AdminCollapsible>
   );
 }

@@ -16,7 +16,7 @@ export default function AdminBackLink() {
     <button
       type="button"
       onClick={handleClick}
-      className="shrink-0 rounded-lg border border-orange-400/50 px-4 py-2 text-sm font-semibold text-orange-300 transition hover:bg-orange-500/10"
+      className="shrink-0 rounded-full border border-[#d7efe2] bg-white px-4 py-2 text-sm font-bold text-[#2fbf71] transition hover:border-[#2fbf71]"
     >
       ← 학생 화면으로
     </button>

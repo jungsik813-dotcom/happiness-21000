@@ -91,32 +91,30 @@ export default function VaultTransfer({
   }
 
   return (
-    <div className="mt-4 border-t border-orange-400/20 pt-4">
+    <div className="mt-4 border-t border-[#e8f4ee] pt-4">
       <AdminGate
         fallback={
-          <p className="text-xs text-gray-500">
-            🔒 중앙 금고 송금은 관리자 전용입니다.
-          </p>
+          <p className="text-xs text-[#9bb5a8]">🔒 중앙 금고 송금은 관리자 전용입니다.</p>
         }
       >
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="flex w-full items-center justify-between text-left text-sm font-medium text-orange-300/90 hover:text-orange-300"
+          className="flex w-full items-center justify-between text-left text-sm font-bold text-[#2fbf71] hover:text-[#1f7a4a]"
         >
           중앙 금고 송금하기 {expanded ? "▲" : "▼"}
         </button>
         {expanded && (
-          <div className="mt-3 space-y-3 rounded-lg border border-orange-400/20 bg-slate-900/50 p-4">
-            <p className="text-xs text-gray-400">
-              잔액: <span className="font-semibold text-orange-400">{fc(vaultBalance)} 클로버</span>
+          <div className="mt-3 space-y-3 rounded-2xl border border-[#d7efe2] bg-[#f7fcf9] p-4">
+            <p className="text-xs text-[#5d7a6c]">
+              잔액: <span className="font-semibold text-[#2fbf71]">{fc(vaultBalance)} 클로버</span>
             </p>
             <div>
-              <label className="mb-1 block text-xs text-gray-400">받는 대상</label>
+              <label className="ui-label">받는 대상</label>
               <select
                 value={toRecipient}
                 onChange={(e) => setToRecipient(e.target.value)}
-                className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400"
+                className="ui-input"
               >
                 <option value="">학생 또는 펀딩 목표 선택</option>
                 {recipientOptions.map((opt) => (
@@ -130,7 +128,7 @@ export default function VaultTransfer({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-gray-400">송금 금액 (클로버)</label>
+              <label className="ui-label">송금 금액 (클로버)</label>
               <input
                 type="number"
                 min={dp === 0 ? 1 : 0.01}
@@ -138,16 +136,12 @@ export default function VaultTransfer({
                 step={amountInputStep(dp)}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400"
+                className="ui-input"
                 placeholder={dp === 0 ? "예: 100" : dp === 1 ? "예: 10.5" : "예: 1.25"}
               />
             </div>
             {message && (
-              <p
-                className={`text-sm ${
-                  message.isError ? "text-red-400" : "text-orange-300"
-                }`}
-              >
+              <p className={`text-sm ${message.isError ? "text-red-600" : "text-[#1f7a4a]"}`}>
                 {message.text}
               </p>
             )}
@@ -155,7 +149,7 @@ export default function VaultTransfer({
               type="button"
               onClick={handleTransfer}
               disabled={isSubmitting || !toRecipient || !amount}
-              className="w-full rounded-lg bg-orange-500/80 px-4 py-2 text-sm font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-btn-primary w-full"
             >
               {isSubmitting ? "송금 중..." : "송금 실행"}
             </button>

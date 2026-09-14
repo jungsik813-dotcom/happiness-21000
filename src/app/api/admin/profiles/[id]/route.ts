@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAdminTokenFromRequest, verifyAdminToken } from "@/lib/admin-auth";
 import { insertAuditLog } from "@/lib/audit-log";
-import { isUuid } from "@/lib/validation";
+import { insertTransaction } from "@/lib/transactions";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,29 +21,37 @@ export async function DELETE(_request: Request, { params }: Params) {
   }
 
   const supabase = await createSupabaseServerClient();
-  if (isUuid(id)) {
-    const shareCheck = await supabase
-      .from("corporation_shares")
-      .select("corporation_id, share_count")
-      .eq("student_id", id)
-      .gt("share_count", 0);
-    if (shareCheck.error) {
+
+  const profileRes = await supabase
+    .from("profiles")
+    .select("id, name, balance")
+    .eq("id", id)
+    .eq("account_type", "STUDENT")
+    .maybeSingle<{ id: string; name: string | null; balance: number | null }>();
+
+  if (profileRes.error || !profileRes.data) {
+    return NextResponse.json(
+      { ok: false, message: "학생을 찾을 수 없습니다." },
+      { status: 404 }
+    );
+  }
+
+  const balance = Number(profileRes.data.balance ?? 0);
+  const studentName = profileRes.data.name?.trim() || "이름 없음";
+
+  if (balance > 0) {
+    const burnTx = await insertTransaction(supabase, {
+      txType: "burn",
+      amount: balance,
+      fromProfileId: id,
+      toProfileId: null,
+      toGoalId: null,
+      memo: `학생 삭제 소각: ${studentName}`
+    });
+    if (!burnTx.ok) {
       return NextResponse.json(
-        { ok: false, message: `삭제 전 지분 확인 실패: ${shareCheck.error.message}` },
+        { ok: false, message: `소각 기록 저장 실패: ${burnTx.error}` },
         { status: 500 }
-      );
-    }
-    if ((shareCheck.data?.length ?? 0) > 0) {
-      const totalShares = (shareCheck.data ?? []).reduce(
-        (sum, row) => sum + Number((row as { share_count: number | null }).share_count ?? 0),
-        0
-      );
-      return NextResponse.json(
-        {
-          ok: false,
-          message: `삭제할 수 없습니다. 이 학생은 현재 법인 지분 ${totalShares}주를 보유 중입니다. 먼저 법인 지분에서 0주로 조정한 뒤 삭제해주세요.`
-        },
-        { status: 400 }
       );
     }
   }
@@ -63,8 +71,14 @@ export async function DELETE(_request: Request, { params }: Params) {
     action: "admin.student.deleted",
     targetType: "profile",
     targetId: id,
-    detail: { burnedOnDelete: true }
+    detail: { burnedOnDelete: true, burnedAmount: balance }
   });
 
-  return NextResponse.json({ ok: true, message: "학생 명단에서 제거되었습니다. (잔액은 소각 처리)" });
+  return NextResponse.json({
+    ok: true,
+    message:
+      balance > 0
+        ? `학생 명단에서 제거되었습니다. (잔액 ${balance} 클로버 소각)`
+        : "학생 명단에서 제거되었습니다."
+  });
 }

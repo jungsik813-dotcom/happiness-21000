@@ -4,6 +4,7 @@ import { getAdminTokenFromRequest, verifyAdminToken } from "@/lib/admin-auth";
 import { readJsonObject } from "@/lib/safe-json";
 import { normalizeDecimalPlaces } from "@/lib/vault-settings";
 import { insertAuditLog } from "@/lib/audit-log";
+import { GUIDE_SECTION_COUNT, serializeGuideContent } from "@/lib/guide-content";
 
 export async function PATCH(request: Request) {
   const token = getAdminTokenFromRequest(request);
@@ -22,6 +23,7 @@ export async function PATCH(request: Request) {
     siteSubtitle?: string;
     siteMetaDescription?: string;
     decimalPlaces?: number;
+    guideSections?: Array<{ title?: string; body?: string }>;
   };
 
   const siteTitle = typeof body.siteTitle === "string" ? body.siteTitle.trim() : undefined;
@@ -31,11 +33,24 @@ export async function PATCH(request: Request) {
   const decimalPlaces =
     typeof body.decimalPlaces === "number" ? normalizeDecimalPlaces(body.decimalPlaces) : undefined;
 
+  let guideHtml: string | undefined;
+  if (Array.isArray(body.guideSections)) {
+    const sections = Array.from({ length: GUIDE_SECTION_COUNT }, (_, i) => {
+      const s = body.guideSections![i];
+      return {
+        title: typeof s?.title === "string" ? s.title : `${i + 1}. `,
+        body: typeof s?.body === "string" ? s.body : ""
+      };
+    });
+    guideHtml = serializeGuideContent({ sections });
+  }
+
   if (
     siteTitle === undefined &&
     siteSubtitle === undefined &&
     siteMetaDescription === undefined &&
-    decimalPlaces === undefined
+    decimalPlaces === undefined &&
+    guideHtml === undefined
   ) {
     return NextResponse.json({ ok: false, message: "변경할 항목이 없습니다." }, { status: 400 });
   }
@@ -54,12 +69,16 @@ export async function PATCH(request: Request) {
   if (siteSubtitle !== undefined) patch.site_subtitle = siteSubtitle;
   if (siteMetaDescription !== undefined) patch.site_meta_description = siteMetaDescription;
   if (decimalPlaces !== undefined) patch.decimal_places = decimalPlaces;
+  if (guideHtml !== undefined) patch.guide_html = guideHtml;
 
   const { error } = await supabase.from("vault").update(patch).eq("id", row.data.id);
 
   if (error) {
     return NextResponse.json(
-      { ok: false, message: `저장 실패: ${error.message}. vault에 site_title 등 컬럼이 있는지 마이그레이션을 확인하세요.` },
+      {
+        ok: false,
+        message: `저장 실패: ${error.message}. vault에 site_title/guide_html 등 컬럼이 있는지 마이그레이션을 확인하세요.`
+      },
       { status: 500 }
     );
   }
@@ -68,7 +87,10 @@ export async function PATCH(request: Request) {
     action: "admin.site_settings.updated",
     targetType: "vault",
     targetId: row.data.id,
-    detail: patch
+    detail: {
+      ...patch,
+      guide_html: guideHtml !== undefined ? "guide sections updated" : undefined
+    }
   });
 
   return NextResponse.json({ ok: true, message: "설정이 저장되었습니다." });

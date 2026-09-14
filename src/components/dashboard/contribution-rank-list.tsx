@@ -54,7 +54,7 @@ export function ContributionRankList({
   decimalPlaces = 0
 }: ContributionRankListProps) {
   if (byPerson.length === 0) {
-    return <p className="text-xs text-gray-500">아직 학생 기부가 없습니다.</p>;
+    return <p className="text-xs text-[#9bb5a8]">아직 학생 기부가 없습니다.</p>;
   }
 
   const top = byPerson.slice(0, maxRows);
@@ -66,13 +66,13 @@ export function ContributionRankList({
           key={p.id}
           className={`flex items-center justify-between gap-2 ${compact ? "text-xs" : "text-sm"}`}
         >
-          <span className="min-w-0 flex-1 truncate text-gray-300">
-            <span className="mr-1.5 inline-block w-8 font-semibold text-orange-400/90">
+          <span className="min-w-0 flex-1 truncate text-[#3d5a4f]">
+            <span className="mr-1.5 inline-block w-8 font-semibold text-[#2fbf71]">
               {i + 1}위
             </span>
             {p.name}
           </span>
-          <span className="shrink-0 font-medium text-orange-400">
+          <span className="shrink-0 font-medium text-[#1f7a4a]">
             {formatCloverAmount(p.amount, decimalPlaces)} {CURRENCY} ({p.percent.toFixed(1)}%)
           </span>
         </li>

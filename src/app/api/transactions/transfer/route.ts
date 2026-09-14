@@ -8,6 +8,12 @@ import { splitGoalFunding } from "@/lib/goal-funding";
 import { normalizeDecimalPlaces } from "@/lib/vault-settings";
 import { isUuid, parseCloverAmount } from "@/lib/validation";
 import type { DecimalPlaces } from "@/lib/money";
+import {
+  FUNDING_OR_VAULT_NOTE_MIN_LENGTH,
+  formatP2PPraiseText,
+  isP2PPraiseReason,
+  P2P_PRAISE_NOTE_MIN_LENGTH
+} from "@/lib/praise-reasons";
 
 type TransferBody = {
   fromStudentId?: string;
@@ -16,6 +22,8 @@ type TransferBody = {
   toVault?: boolean;
   amount?: number;
   praiseMessage?: string;
+  /** P2P 전용: 객관식 칭찬 사유 */
+  praiseReason?: string;
 };
 
 type ProfileRow = { id: string; balance: number | null; name: string | null };
@@ -37,6 +45,7 @@ export async function POST(request: Request) {
   const toGoalId = body.toGoalId?.trim() || null;
   const toVault = body.toVault === true;
   const praiseMessage = typeof body.praiseMessage === "string" ? body.praiseMessage.trim() : "";
+  const praiseReason = typeof body.praiseReason === "string" ? body.praiseReason.trim() : "";
 
   const isP2P = Boolean(toStudentId);
   const isContribution = Boolean(toGoalId);
@@ -97,9 +106,28 @@ export async function POST(request: Request) {
     );
   }
 
-  if (praiseMessage.length < 10) {
+  if (isP2P) {
+    if (!isP2PPraiseReason(praiseReason)) {
+      return NextResponse.json(
+        { ok: false, message: "칭찬 사유를 목록에서 선택해주세요." },
+        { status: 400 }
+      );
+    }
+    if (praiseMessage.length < P2P_PRAISE_NOTE_MIN_LENGTH) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: `짧은 한마디를 ${P2P_PRAISE_NOTE_MIN_LENGTH}자 이상 입력해주세요.`
+        },
+        { status: 400 }
+      );
+    }
+  } else if (praiseMessage.length < FUNDING_OR_VAULT_NOTE_MIN_LENGTH) {
     return NextResponse.json(
-      { ok: false, message: "송금 사유/칭찬 메시지를 10자 이상 입력해주세요." },
+      {
+        ok: false,
+        message: `송금 사유를 ${FUNDING_OR_VAULT_NOTE_MIN_LENGTH}자 이상 입력해주세요.`
+      },
       { status: 400 }
     );
   }
@@ -115,6 +143,7 @@ export async function POST(request: Request) {
     .from("profiles")
     .select("id, name, balance, account_type")
     .eq("id", fromStudentId)
+    .eq("account_type", "STUDENT")
     .single<ProfileRow & { account_type: string | null }>();
 
   if (fromQuery.error || !fromQuery.data) {
@@ -132,8 +161,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const fromIsCorp = (fromQuery.data.account_type ?? "STUDENT") === "CORPORATION";
-  if (!fromIsCorp && !fairMode && (isContribution || isVaultDeposit)) {
+  if (!fairMode && (isContribution || isVaultDeposit)) {
     const maxPerTransfer = maxAmountPerTransfer(fromBalance, dp);
     if (amount > maxPerTransfer) {
       return NextResponse.json(
@@ -314,6 +342,7 @@ export async function POST(request: Request) {
       .from("profiles")
       .select("id, name, balance, account_type")
       .eq("id", toStudentId!)
+      .eq("account_type", "STUDENT")
       .single<ProfileRow & { account_type: string | null }>();
 
     if (toQuery.error || !toQuery.data) {
@@ -323,17 +352,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const toIsCorp = (toQuery.data.account_type ?? "STUDENT") === "CORPORATION";
-    /** 법인 연관 거래는 10% 상한 없음 */
-    const maxPerTransfer =
-      fromIsCorp || toIsCorp || fairMode
-        ? fromBalance
-        : maxAmountPerTransfer(fromBalance, dp);
+    const maxPerTransfer = fairMode
+      ? fromBalance
+      : maxAmountPerTransfer(fromBalance, dp);
     if (amount > maxPerTransfer) {
-      const msg =
-        fromIsCorp || toIsCorp || fairMode
-          ? `송금 금액이 잔액을 초과할 수 없습니다. (최대 ${maxPerTransfer} 클로버)`
-          : `한 번에 보낼 수 있는 최대액은 현재 잔액의 10%입니다. (최대 ${maxPerTransfer} 클로버, 여러 번 나누어 보낼 수 있어요)`;
+      const msg = fairMode
+        ? `송금 금액이 잔액을 초과할 수 없습니다. (최대 ${maxPerTransfer} 클로버)`
+        : `한 번에 보낼 수 있는 최대액은 현재 잔액의 10%입니다. (최대 ${maxPerTransfer} 클로버, 여러 번 나누어 보낼 수 있어요)`;
       return NextResponse.json({ ok: false, message: msg }, { status: 400 });
     }
 
@@ -352,7 +377,7 @@ export async function POST(request: Request) {
       );
     }
 
-    memo = `${fromQuery.data.name ?? "이름 없음"} → ${toQuery.data.name ?? "이름 없음"} | 칭찬: ${praiseMessage}`;
+    memo = `${fromQuery.data.name ?? "이름 없음"} → ${toQuery.data.name ?? "이름 없음"} | 칭찬: ${formatP2PPraiseText(praiseReason, praiseMessage)}`;
   }
 
   const remainingBalance = fromBalance - effectiveAmount;

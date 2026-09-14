@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type AuditPayload = {
-  actorType?: "ADMIN" | "CORPORATION" | "SYSTEM";
+  actorType?: "ADMIN" | "SYSTEM";
   actorId?: string | null;
   action: string;
   targetType: string;

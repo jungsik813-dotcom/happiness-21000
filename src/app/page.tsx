@@ -7,6 +7,7 @@ import StudentGrid from "@/components/dashboard/student-grid";
 import FundingGoalsDisplay from "@/components/dashboard/funding-goals-display";
 import PraiseTimeline from "@/components/dashboard/praise-timeline";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { computeCloverSupply } from "@/lib/clover-supply";
 import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank";
 import { fetchTransactionsWithTypeFallback } from "@/lib/transactions";
 import Link from "next/link";
@@ -42,7 +43,7 @@ export default async function HomePage() {
   if (!supabase) {
     return (
       <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
-        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+        <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           서버 데이터 클라이언트 초기화에 실패했습니다. 잠시 후 다시 시도해주세요.
         </section>
       </main>
@@ -72,7 +73,7 @@ export default async function HomePage() {
   if (!queries) {
     return (
       <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
-        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+        <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           데이터 로딩 중 예외가 발생했습니다. 잠시 후 다시 시도해주세요.
         </section>
       </main>
@@ -81,14 +82,13 @@ export default async function HomePage() {
   const [profilesQuery, vaultQuery, goalsQuery, txResult] = queries;
 
   const goalsRaw = Array.isArray(goalsQuery.data) ? goalsQuery.data : (goalsQuery.data ?? []);
-  const profiles = ((profilesQuery.data as ProfileRow[] | null) ?? []).map(
-    (profile) => ({
+  const profiles = ((profilesQuery.data as ProfileRow[] | null) ?? [])
+    .filter((profile) => (profile.account_type ?? "STUDENT") === "STUDENT")
+    .map((profile) => ({
       id: profile.id,
       name: profile.name?.trim() || "이름 없음",
-      balance: profile.balance ?? 0,
-      account_type: profile.account_type ?? "STUDENT"
-    })
-  );
+      balance: profile.balance ?? 0
+    }));
 
   const issuanceTotal = Number(vaultQuery.data?.issuance_total ?? 0);
   const issuanceCount = Number(vaultQuery.data?.issuance_count ?? 0);
@@ -185,10 +185,14 @@ export default async function HomePage() {
     if (amount <= 0) continue;
     burnedByGoal.set(toGoalId, (burnedByGoal.get(toGoalId) ?? 0) + amount);
   }
-  const totalBurned = [...burnedByGoal.values()].reduce((a, b) => a + b, 0);
   const totalProfileBalances = profiles.reduce((sum, p) => sum + Number(p.balance ?? 0), 0);
   const totalGoalBalances = goals.reduce((sum, g) => sum + Number(g.current_amount ?? 0), 0);
-  const circulating = Math.max(0, totalProfileBalances + vaultBalance + totalGoalBalances);
+  const { circulating, burned: totalBurned } = computeCloverSupply({
+    issuanceTotal,
+    profileBalances: totalProfileBalances,
+    vaultBalance,
+    goalBalances: totalGoalBalances
+  });
 
   const hasError = Boolean(profilesQuery.error || vaultQuery.error || txResult.errorMessage);
   const errorDetails: string[] = [];
@@ -197,45 +201,50 @@ export default async function HomePage() {
   if (txResult.errorMessage) errorDetails.push(`transactions: ${txResult.errorMessage}`);
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
+    <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-10 md:px-10 md:py-12">
       <MainHeader title={branding.site_title} subtitle={branding.site_subtitle} />
 
-      <section className="mb-8 rounded-2xl border border-orange-400/40 bg-slate-900/80 p-6 shadow-[0_0_32px_rgba(247,147,26,0.15)]">
-        <p className="text-xs uppercase tracking-[0.2em] text-orange-300">
-          누적 발행
+      <section className="animate-pop-in mb-8 overflow-hidden rounded-[2rem] border border-[#d7efe2] bg-white/90 p-6 shadow-[0_12px_40px_rgba(47,191,113,0.1)] md:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#2fbf71]">누적 발행</p>
+            <p
+              className="mt-2 text-3xl font-semibold text-[#1f3d32] md:text-5xl"
+              style={{ fontFamily: "var(--font-fredoka), sans-serif" }}
+            >
+              {formatCloverAmount(issuanceTotal, displayDp)}
+              <span className="text-2xl text-[#5d7a6c] md:text-3xl"> / 21,000 {CURRENCY}</span>
+            </p>
+            <p className="mt-2 text-sm text-[#5d7a6c]">{issuanceCount}회차 · 학급 클로버가 얼마나 자랐는지 보여줘요</p>
+          </div>
+          <div className="animate-float-soft rounded-2xl border border-[#c9f0db] bg-[#dff8ea] px-4 py-3 text-sm font-bold text-[#1f7a4a]">
+            중앙 금고 {formatCloverAmount(vaultBalance, displayDp)} {CURRENCY}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <p className="rounded-2xl border border-[#e8f4ff] bg-[#f3f9ff] px-4 py-3 text-sm text-[#3d5a6c]">
+            현재 유통중{" "}
+            <span className="font-bold text-[#1f3d32]">
+              {formatCloverAmount(circulating, displayDp)} {CURRENCY}
+            </span>
+          </p>
+          <p className="rounded-2xl border border-[#ffe8de] bg-[#fff7f3] px-4 py-3 text-sm text-[#7a5345]">
+            누적 소각{" "}
+            <span className="font-bold text-[#ff7a59]">
+              {formatCloverAmount(totalBurned, displayDp)} {CURRENCY}
+            </span>
+          </p>
+        </div>
+        <p className="mt-2 text-xs text-[#9bb5a8]">
+          발행 {formatCloverAmount(issuanceTotal, displayDp)} = 유통{" "}
+          {formatCloverAmount(circulating, displayDp)} + 소각{" "}
+          {formatCloverAmount(totalBurned, displayDp)}
         </p>
-        <p className="mt-2 text-3xl font-extrabold text-orange-400 md:text-5xl">
-          {formatCloverAmount(issuanceTotal, displayDp)} / 21,000 {CURRENCY} ({issuanceCount}회차)
-        </p>
-        <p className="mt-2 text-sm text-gray-400">
-          학급 클로버 총발행량을 한눈에 확인하세요.
-        </p>
-        <p className="mt-2 text-sm text-gray-400">
-          중앙 금고 잔액{" "}
-          <span className="font-semibold text-orange-300">
-            {formatCloverAmount(vaultBalance, displayDp)} {CURRENCY}
-          </span>
-        </p>
-        <p className="mt-3 rounded-lg border border-white/10 bg-slate-800/50 px-4 py-2 text-sm">
-          <span className="text-gray-400">현재 유통중:</span>{" "}
-          <span className="font-bold text-orange-400">
-            {formatCloverAmount(circulating, displayDp)} {CURRENCY}
-          </span>
-          <span className="ml-2 text-xs text-gray-500">(실잔액 합계 기준)</span>
-        </p>
-        <p className="mt-2 rounded-lg border border-white/10 bg-slate-800/30 px-4 py-2 text-xs text-gray-400">
-          정책 지표: 누적 소각{" "}
-          <span className="font-semibold text-orange-300">
-            {formatCloverAmount(totalBurned, displayDp)} {CURRENCY}
-          </span>{" "}
-          / 누적 발행 대비 이론 유통{" "}
-          <span className="font-semibold text-gray-200">
-            {formatCloverAmount(Math.max(0, issuanceTotal - totalBurned), displayDp)} {CURRENCY}
-          </span>
-        </p>
+
         <Link
           href="/transactions"
-          className="mt-4 inline-block rounded-md border border-orange-400/50 px-4 py-2 text-sm font-semibold text-orange-300 transition hover:bg-orange-500/10"
+          className="mt-5 inline-flex rounded-full bg-[#2fbf71] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#28a862] hover:shadow-md"
         >
           거래내역 보기
         </Link>
@@ -251,15 +260,15 @@ export default async function HomePage() {
       <PraiseTimeline items={praiseTimelineItems} decimalPlaces={displayDp} />
 
       {hasError ? (
-        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+        <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p className="font-semibold">데이터 로딩 중 오류가 발생했습니다.</p>
           {errorDetails.length > 0 && (
-            <p className="mt-1 text-xs text-red-300">{errorDetails.join(" · ")}</p>
+            <p className="mt-1 text-xs text-red-600">{errorDetails.join(" · ")}</p>
           )}
           <p className="mt-3 text-xs">
             Supabase 대시보드에서 <strong>profiles</strong>, <strong>vault</strong> 테이블이 있고
             RLS로 anon의 SELECT가 허용되어야 합니다.{" "}
-            <code className="rounded bg-slate-800 px-1">supabase/migrations/</code>의
+            <code className="rounded bg-white px-1">supabase/migrations/</code>의
             <strong> 000_init.sql → 001~004</strong>를 SQL Editor에서 순서대로 실행하세요.
           </p>
         </section>

@@ -170,22 +170,27 @@ export default async function TransactionsPage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
-      <header className="mb-8 border-b border-white/10 pb-4">
-        <p className="text-xs uppercase tracking-[0.25em] text-orange-400">
+      <header className="mb-8 border-b border-[#d7efe2] pb-4">
+        <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#2fbf71]">
           Transaction Ledger
         </p>
-        <h1 className="mt-2 text-3xl font-extrabold text-white md:text-5xl">거래내역</h1>
-        <p className="mt-2 text-sm text-gray-400">학급 경제의 모든 돈 흐름을 추적합니다.</p>
+        <h1
+          className="mt-2 text-3xl font-semibold text-[#1f3d32] md:text-5xl"
+          style={{ fontFamily: "var(--font-fredoka), sans-serif" }}
+        >
+          거래내역
+        </h1>
+        <p className="mt-2 text-sm text-[#5d7a6c]">학급 경제의 모든 돈 흐름을 추적합니다.</p>
         <Link
           href="/"
-          className="mt-4 inline-block rounded-md border border-orange-400/50 px-4 py-2 text-sm font-semibold text-orange-300 transition hover:bg-orange-500/10"
+          className="mt-4 inline-block rounded-full border border-[#d7efe2] bg-white px-4 py-2 text-sm font-bold text-[#2fbf71] transition hover:border-[#2fbf71]"
         >
           메인으로 돌아가기
         </Link>
       </header>
 
       {txQuery.error ? (
-        <section className="rounded-xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+        <section className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           거래내역을 불러오지 못했습니다. transactions 테이블/RLS를 확인해주세요.
         </section>
       ) : (

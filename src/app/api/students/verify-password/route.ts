@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     .from("profiles")
     .select("id, name, balance, password_hash, account_type")
     .eq("id", studentId)
+    .eq("account_type", "STUDENT")
     .single<ProfileRow>();
 
   if (error || !data) {
@@ -48,8 +49,7 @@ export async function POST(request: Request) {
     profile: {
       id: data.id,
       name: data.name ?? "이름 없음",
-      balance: data.balance ?? 0,
-      accountType: data.account_type ?? "STUDENT"
+      balance: data.balance ?? 0
     }
   });
 }

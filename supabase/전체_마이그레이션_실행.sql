@@ -83,8 +83,11 @@ UPDATE vault SET transfer_hours_enforced = COALESCE(transfer_hours_enforced, tru
 -- ========== 006 사이트 문구·소수·numeric(상세는 migrations/006_site_settings_numeric_fk.sql 참고) ==========
 -- Supabase SQL Editor에서 supabase/migrations/006_site_settings_numeric_fk.sql 전체를 실행하세요.
 
--- ========== 007 법인/배당/지분(상세는 migrations/007_corporation_dividend.sql 참고) ==========
--- Supabase SQL Editor에서 supabase/migrations/007_corporation_dividend.sql 전체를 실행하세요.
+-- ========== 007~014 법인 관련(과거) / 015에서 제거 ==========
+-- 신규 DB는 법인 기능을 쓰지 않습니다. 기존 DB는 migrations/015_remove_corporation.sql 을 실행하세요.
+
+-- ========== 016 가이드 HTML ==========
+-- Supabase SQL Editor에서 supabase/migrations/016_guide_html.sql 을 실행하세요.
 
 -- ========== 학생 추가 (이름 수정 후 사용, 최초 1회만) ==========
 INSERT INTO profiles (name, balance) VALUES

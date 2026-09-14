@@ -5,6 +5,7 @@ import FundingSection from "./funding-section";
 import FairModeToggle from "./fair-mode-toggle";
 import BusinessHoursToggle from "./business-hours-toggle";
 import AdminGate from "@/components/admin/admin-gate";
+import AdminCollapsible from "@/components/admin/admin-collapsible";
 import type { DecimalPlaces } from "@/lib/money";
 
 export type Goal = {
@@ -34,6 +35,9 @@ type AdminSectionProps = {
   fairMode?: boolean;
   transferHoursEnforced?: boolean;
   decimalPlaces?: DecimalPlaces;
+  issuanceTotal?: number;
+  issuanceCount?: number;
+  studentCount?: number;
 };
 
 export default function AdminSection({
@@ -42,19 +46,28 @@ export default function AdminSection({
   burnedByGoal = {},
   fairMode = false,
   transferHoursEnforced = true,
-  decimalPlaces = 0
+  decimalPlaces = 0,
+  issuanceTotal = 0,
+  issuanceCount = 0,
+  studentCount = 0
 }: AdminSectionProps) {
   return (
     <>
       <AdminGate
         fallback={
-          <section className="mb-6 rounded-xl border border-slate-600/50 bg-slate-900/50 p-4">
-            <p className="text-sm text-gray-400">🔒 장터·영업시간 설정 (관리자 전용)</p>
+          <section className="ui-card mb-6 p-4">
+            <p className="text-sm text-[#5d7a6c]">🔒 장터·영업시간 설정 (관리자 전용)</p>
           </section>
         }
       >
-        <FairModeToggle fairMode={fairMode} />
-        <BusinessHoursToggle transferHoursEnforced={transferHoursEnforced} />
+        <AdminCollapsible
+          title="장터·영업시간 설정"
+          description="공정 장터 모드와 송금 가능 시간을 켭니다."
+          className="ui-card mb-6 p-5"
+        >
+          <FairModeToggle fairMode={fairMode} />
+          <BusinessHoursToggle transferHoursEnforced={transferHoursEnforced} />
+        </AdminCollapsible>
       </AdminGate>
       <GoalManager goals={goals} />
       <FundingSection
@@ -62,6 +75,9 @@ export default function AdminSection({
         contributions={contributions}
         burnedByGoal={burnedByGoal}
         decimalPlaces={decimalPlaces}
+        issuanceTotal={issuanceTotal}
+        issuanceCount={issuanceCount}
+        studentCount={studentCount}
       />
     </>
   );

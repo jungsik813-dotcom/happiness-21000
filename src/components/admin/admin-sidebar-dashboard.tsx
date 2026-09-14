@@ -4,14 +4,14 @@ import { useMemo, useState } from "react";
 import AdminSiteRoster from "@/components/admin/admin-site-roster";
 import StudentRosterManager from "@/components/admin/student-roster-manager";
 import StudentPasswordReset from "@/components/dashboard/student-password-reset";
-import CorporationAdmin from "@/components/dashboard/corporation-admin";
 import AdminSection from "@/components/dashboard/admin-section";
 import VaultTransfer from "@/components/dashboard/vault-transfer";
+import AdminCollapsible from "@/components/admin/admin-collapsible";
 import { formatCloverAmount } from "@/lib/money";
 import type { DecimalPlaces } from "@/lib/money";
+import type { GuideContent } from "@/lib/guide-content";
 
 type Student = { id: string; name: string };
-type Corporation = { id: string; name: string };
 type Goal = {
   id: string;
   name: string;
@@ -23,7 +23,6 @@ type Contribution = { id: string; name: string; amount: number; percent: number 
 
 type Props = {
   students: Student[];
-  corporations: Corporation[];
   goals: Goal[];
   contributions: Record<string, { total: number; byPerson: Contribution[] }>;
   burnedByGoal: Record<string, number>;
@@ -32,9 +31,12 @@ type Props = {
   displayDp: DecimalPlaces;
   initialSiteTitle: string;
   initialSiteSubtitle: string;
+  initialGuide: GuideContent;
   vaultBalance: number;
   issuanceTotal: number;
   issuanceCount: number;
+  circulating: number;
+  totalBurned: number;
 };
 
 type TabId = "settings" | "members" | "operations";
@@ -45,28 +47,25 @@ export default function AdminSidebarDashboard(props: Props) {
   const nav = useMemo(
     () => [
       { id: "settings" as const, label: "설정" },
-      { id: "members" as const, label: "학생·법인 관리" },
+      { id: "members" as const, label: "학생 관리" },
       { id: "operations" as const, label: "운영 현황" }
     ],
     []
   );
 
-  const totalBurned = Object.values(props.burnedByGoal).reduce((a, b) => a + b, 0);
-  const circulating = Math.max(0, props.issuanceTotal - totalBurned);
-
   return (
     <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
       <aside className="md:sticky md:top-6 md:self-start">
-        <nav className="rounded-2xl border border-white/10 bg-slate-900/70 p-3">
+        <nav className="rounded-3xl border border-[#d7efe2] bg-white p-3 shadow-[0_8px_24px_rgba(47,191,113,0.06)]">
           {nav.map((n) => (
             <button
               key={n.id}
               type="button"
               onClick={() => setTab(n.id)}
-              className={`mb-2 w-full rounded-lg px-3 py-2 text-left text-sm last:mb-0 ${
+              className={`mb-2 w-full rounded-2xl px-3 py-2 text-left text-sm last:mb-0 ${
                 tab === n.id
-                  ? "bg-orange-500/20 font-semibold text-orange-300"
-                  : "text-gray-300 hover:bg-slate-800"
+                  ? "bg-[#dff8ea] font-semibold text-[#1f7a4a]"
+                  : "text-[#5d7a6c] hover:bg-[#f7fcf9]"
               }`}
             >
               {n.label}
@@ -81,6 +80,7 @@ export default function AdminSidebarDashboard(props: Props) {
             initialSiteTitle={props.initialSiteTitle}
             initialSiteSubtitle={props.initialSiteSubtitle}
             initialDecimalPlaces={props.displayDp}
+            initialGuide={props.initialGuide}
           />
         )}
 
@@ -88,25 +88,45 @@ export default function AdminSidebarDashboard(props: Props) {
           <div className="space-y-6">
             <StudentRosterManager students={props.students} />
             <StudentPasswordReset students={props.students} />
-            <CorporationAdmin students={props.students} corporations={props.corporations} />
           </div>
         )}
 
         {tab === "operations" && (
           <div className="space-y-6">
-            <section className="rounded-2xl border border-orange-400/40 bg-slate-900/80 p-6">
-              <p className="text-xs uppercase tracking-[0.2em] text-orange-300">21,000 행복 중앙 금고</p>
-              <p className="mt-2 text-3xl font-extrabold text-orange-400 md:text-4xl">
-                누적 발행: {formatCloverAmount(props.issuanceTotal, props.displayDp)} / 21,000 클로버 ({props.issuanceCount}회차)
+            <AdminCollapsible
+              title="중앙 금고·발행 현황"
+              description={`누적 발행 ${formatCloverAmount(props.issuanceTotal, props.displayDp)} / 21,000 · ${props.issuanceCount}회차`}
+              defaultOpen
+              className="rounded-3xl border border-[#d7efe2] bg-white p-6 shadow-[0_8px_24px_rgba(47,191,113,0.08)]"
+            >
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#2fbf71]">
+                21,000 행복 중앙 금고
               </p>
-              <p className="mt-2 text-sm text-gray-400">
+              <p className="mt-2 text-3xl font-extrabold text-[#1f3d32] md:text-4xl">
+                누적 발행: {formatCloverAmount(props.issuanceTotal, props.displayDp)} / 21,000 클로버 (
+                {props.issuanceCount}회차)
+              </p>
+              <p className="mt-2 text-sm text-[#5d7a6c]">
                 중앙 금고 잔액 {formatCloverAmount(props.vaultBalance, props.displayDp)} 클로버
               </p>
-              <p className="mt-3 rounded-lg border border-white/10 bg-slate-800/50 px-4 py-2 text-sm">
-                <span className="text-gray-400">현재 유통중:</span>{" "}
-                <span className="font-bold text-orange-400">
-                  {formatCloverAmount(circulating, props.displayDp)} 클로버
-                </span>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <p className="rounded-2xl border border-[#e8f4ee] bg-[#f7fcf9] px-4 py-2 text-sm">
+                  <span className="text-[#5d7a6c]">현재 유통중:</span>{" "}
+                  <span className="font-bold text-[#2fbf71]">
+                    {formatCloverAmount(props.circulating, props.displayDp)} 클로버
+                  </span>
+                </p>
+                <p className="rounded-2xl border border-[#ffe0d4] bg-[#fff4f0] px-4 py-2 text-sm">
+                  <span className="text-[#7a5345]">누적 소각:</span>{" "}
+                  <span className="font-bold text-[#ff7a59]">
+                    {formatCloverAmount(props.totalBurned, props.displayDp)} 클로버
+                  </span>
+                </p>
+              </div>
+              <p className="mt-2 text-xs text-[#9bb5a8]">
+                발행 {formatCloverAmount(props.issuanceTotal, props.displayDp)} = 유통{" "}
+                {formatCloverAmount(props.circulating, props.displayDp)} + 소각{" "}
+                {formatCloverAmount(props.totalBurned, props.displayDp)}
               </p>
               <VaultTransfer
                 vaultBalance={props.vaultBalance}
@@ -114,7 +134,7 @@ export default function AdminSidebarDashboard(props: Props) {
                 goals={props.goals.map((g) => ({ id: g.id, name: g.name, is_active: g.is_active }))}
                 decimalPlaces={props.displayDp}
               />
-            </section>
+            </AdminCollapsible>
 
             <AdminSection
               goals={props.goals}
@@ -123,6 +143,9 @@ export default function AdminSidebarDashboard(props: Props) {
               fairMode={props.fairMode}
               transferHoursEnforced={props.transferHoursEnforced}
               decimalPlaces={props.displayDp}
+              issuanceTotal={props.issuanceTotal}
+              issuanceCount={props.issuanceCount}
+              studentCount={props.students.length}
             />
           </div>
         )}

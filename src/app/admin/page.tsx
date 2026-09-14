@@ -7,6 +7,7 @@ import { shouldIncludeInGoalContributorRank } from "@/lib/goal-contribution-rank
 import type { DecimalPlaces } from "@/lib/money";
 import { fetchTransactionsWithTypeFallback } from "@/lib/transactions";
 import { getVaultBranding, normalizeDecimalPlaces } from "@/lib/vault-settings";
+import { computeCloverSupply } from "@/lib/clover-supply";
 
 export const dynamic = "force-dynamic";
 
@@ -80,8 +81,7 @@ export default async function AdminPage() {
     balance: p.balance ?? 0,
     account_type: p.account_type ?? "STUDENT"
   }));
-  const students = profilesAll.filter((p) => p.account_type === "STUDENT");
-  const corporations = profilesAll.filter((p) => p.account_type === "CORPORATION");
+  const students = profilesAll.filter((p) => (p.account_type ?? "STUDENT") === "STUDENT");
 
   const vaultBalance = Number(vaultQuery.data?.central_balance ?? 0);
   const issuanceTotal = Number(vaultQuery.data?.issuance_total ?? 0);
@@ -158,16 +158,24 @@ export default async function AdminPage() {
     if (amount <= 0) continue;
     burnedByGoal.set(toGoalId, (burnedByGoal.get(toGoalId) ?? 0) + amount);
   }
-  const totalBurned = [...burnedByGoal.values()].reduce((a, b) => a + b, 0);
+
+  const totalProfileBalances = students.reduce((sum, p) => sum + Number(p.balance ?? 0), 0);
+  const totalGoalBalances = goals.reduce((sum, g) => sum + Number(g.current_amount ?? 0), 0);
+  const { circulating, burned: totalBurned } = computeCloverSupply({
+    issuanceTotal,
+    profileBalances: totalProfileBalances,
+    vaultBalance,
+    goalBalances: totalGoalBalances
+  });
 
   return (
     <AdminProvider>
       <main className="mx-auto min-h-screen w-full max-w-6xl px-6 py-12 md:px-10">
-        <header className="mb-10 flex items-start justify-between gap-4 border-b border-white/10 pb-4">
+        <header className="mb-10 flex items-start justify-between gap-4 border-b border-[#d7efe2] pb-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-orange-400">관리자 대시보드</p>
-            <h1 className="mt-2 text-3xl font-extrabold text-white md:text-5xl">관리자</h1>
-            <p className="mt-3 text-sm text-gray-400">학급 경제 시스템을 관리합니다.</p>
+            <p className="text-xs font-bold uppercase tracking-[0.25em] text-[#2fbf71]">관리자 대시보드</p>
+            <h1 className="mt-2 text-3xl font-extrabold text-[#1f3d32] md:text-5xl">관리자</h1>
+            <p className="mt-3 text-sm text-[#5d7a6c]">학급 경제 시스템을 관리합니다.</p>
           </div>
           <AdminBackLink />
         </header>
@@ -177,16 +185,15 @@ export default async function AdminPage() {
             <section
               role="button"
               tabIndex={0}
-              className="cursor-pointer rounded-2xl border border-orange-400/40 bg-slate-900/80 p-8 text-center transition hover:border-orange-400/60"
+              className="cursor-pointer rounded-3xl border border-[#d7efe2] bg-white p-8 text-center shadow-[0_8px_24px_rgba(47,191,113,0.08)] transition hover:border-[#2fbf71]"
             >
-              <p className="text-lg font-semibold text-white">관리자 로그인이 필요합니다</p>
-              <p className="mt-2 text-sm text-orange-300">클릭하여 관리자 비밀번호를 입력하세요</p>
+              <p className="text-lg font-semibold text-[#1f3d32]">관리자 로그인이 필요합니다</p>
+              <p className="mt-2 text-sm text-[#2fbf71]">클릭하여 관리자 비밀번호를 입력하세요</p>
             </section>
           }
         >
           <AdminSidebarDashboard
             students={students.map((p) => ({ id: p.id, name: p.name }))}
-            corporations={corporations.map((p) => ({ id: p.id, name: p.name }))}
             goals={goals}
             contributions={contributions}
             burnedByGoal={Object.fromEntries(burnedByGoal.entries())}
@@ -195,9 +202,12 @@ export default async function AdminPage() {
             displayDp={displayDp}
             initialSiteTitle={branding.site_title}
             initialSiteSubtitle={branding.site_subtitle}
+            initialGuide={branding.guide}
             vaultBalance={vaultBalance}
             issuanceTotal={issuanceTotal}
             issuanceCount={issuanceCount}
+            circulating={circulating}
+            totalBurned={totalBurned}
           />
         </AdminGate>
       </main>

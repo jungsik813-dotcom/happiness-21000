@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useAdmin } from "./admin-provider";
 
 type AdminGateProps = {
@@ -10,95 +10,78 @@ type AdminGateProps = {
 
 export default function AdminGate({ children, fallback }: AdminGateProps) {
   const { isUnlocked, unlock } = useAdmin();
-  const [password, setPassword] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleUnlock = useCallback(async () => {
-    if (!password.trim()) {
-      setError("비밀번호를 입력해주세요.");
-      return;
-    }
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
     setLoading(true);
     setError("");
     const result = await unlock(password);
     setLoading(false);
     if (result.ok) {
-      setPassword("");
       setShowModal(false);
+      setPassword("");
     } else {
-      setError(result.message);
+      setError(result.message || "비밀번호가 올바르지 않습니다.");
     }
-  }, [password, unlock]);
-
-  const openModal = useCallback(() => {
-    setShowModal(true);
-    setPassword("");
-    setError("");
-  }, []);
-
-  if (isUnlocked) {
-    return <>{children}</>;
   }
 
-  if (fallback) {
-    return (
-      <>
-        <div
-          onClick={openModal}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && openModal()}
-          className="cursor-pointer"
-        >
-          {fallback}
-        </div>
-        {showModal && (
-          <div
-            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4"
-            onClick={(e) => e.target === e.currentTarget && (setShowModal(false), setError(""))}
-            role="presentation"
-          >
-            <div
-              className="w-full max-w-sm rounded-2xl border border-orange-400/40 bg-slate-900 p-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-bold text-white">관리자 모드</h3>
-              <p className="mt-1 text-sm text-gray-400">비밀번호를 입력하세요</p>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleUnlock()}
-                placeholder="비밀번호"
-                className="mt-4 w-full rounded-md border border-white/20 bg-slate-800 px-3 py-2 text-white outline-none focus:border-orange-400"
-                autoFocus
-              />
-              {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setShowModal(false); setError(""); }}
-                  className="flex-1 rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-gray-300"
-                >
-                  취소
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUnlock}
-                  disabled={loading}
-                  className="flex-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
-                >
-                  {loading ? "확인 중..." : "확인"}
-                </button>
-              </div>
-            </div>
-          </div>
+  if (isUnlocked) return <>{children}</>;
+
+  return (
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setShowModal(true)}
+        onKeyDown={(e) => e.key === "Enter" && setShowModal(true)}
+      >
+        {fallback ?? (
+          <section className="ui-card cursor-pointer p-4 text-center transition hover:border-[#2fbf71]">
+            <p className="text-sm font-semibold text-[#1f3d32]">관리자 로그인이 필요합니다</p>
+            <p className="mt-1 text-xs text-[#2fbf71]">클릭하여 비밀번호 입력</p>
+          </section>
         )}
-      </>
-    );
-  }
+      </div>
 
-  return null;
+      {showModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1f3d32]/35 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSubmit}
+            className="w-full max-w-sm rounded-3xl border border-[#d7efe2] bg-white p-6 shadow-xl"
+          >
+            <h3 className="text-lg font-bold text-[#1f3d32]">관리자 모드</h3>
+            <p className="mt-1 text-sm text-[#5d7a6c]">비밀번호를 입력하세요</p>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="ui-input mt-4"
+              autoFocus
+            />
+            {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModal(false);
+                  setPassword("");
+                  setError("");
+                }}
+                className="ui-btn-secondary flex-1"
+              >
+                취소
+              </button>
+              <button type="submit" disabled={loading || !password} className="ui-btn-primary flex-1">
+                {loading ? "확인 중..." : "입장"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </>
+  );
 }

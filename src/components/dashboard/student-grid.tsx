@@ -6,12 +6,17 @@ import { getEffectiveTransferTimeLock, getTimeLockMessage } from "@/lib/time-loc
 import { CURRENCY, maxAmountPerTransfer } from "@/lib/constants";
 import { amountInputStep, formatCloverAmount, roundToDecimalPlaces } from "@/lib/money";
 import type { DecimalPlaces } from "@/lib/money";
+import {
+  FUNDING_OR_VAULT_NOTE_MIN_LENGTH,
+  P2P_PRAISE_NOTE_MIN_LENGTH,
+  P2P_PRAISE_REASONS
+} from "@/lib/praise-reasons";
+import SectionCollapsible from "@/components/ui/section-collapsible";
 
 type Student = {
   id: string;
   name: string;
   balance: number;
-  account_type?: string;
 };
 
 type Goal = {
@@ -51,8 +56,8 @@ export default function StudentGrid({
   const [toRecipient, setToRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [praiseMessage, setPraiseMessage] = useState("");
+  const [praiseReason, setPraiseReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDividendSubmitting, setIsDividendSubmitting] = useState(false);
   const [toast, setToast] = useState<{
     text: string;
     tone: "success" | "error";
@@ -60,9 +65,6 @@ export default function StudentGrid({
   const [passwordModalStudent, setPasswordModalStudent] = useState<Student | null>(null);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordVerifying, setPasswordVerifying] = useState(false);
-  const [dividendAmount, setDividendAmount] = useState("");
-  const [dividendReason, setDividendReason] = useState("");
-  const [holdings, setHoldings] = useState<Array<{ studentId: string; studentName: string; shareCount: number }>>([]);
 
   useEffect(() => {
     setLocalStudents(students);
@@ -82,7 +84,6 @@ export default function StudentGrid({
   );
 
   const timeLockResult = getEffectiveTransferTimeLock(transferHoursEnforced);
-  const selectedIsCorporation = (selectedStudent?.account_type ?? "STUDENT") === "CORPORATION";
   const isGoalRecipient = toRecipient.startsWith(GOAL_PREFIX);
   const isVaultRecipient = toRecipient === VAULT_RECIPIENT;
   const isP2PToStudent = Boolean(toRecipient && !isGoalRecipient && !isVaultRecipient);
@@ -102,30 +103,24 @@ export default function StudentGrid({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ studentId: passwordModalStudent.id, password: pin })
       });
-      const data = (await res.json()) as { ok: boolean; message?: string; profile?: { id: string; name: string; balance: number; accountType?: string } };
+      const data = (await res.json()) as {
+        ok: boolean;
+        message?: string;
+        profile?: { id: string; name: string; balance: number };
+      };
       if (data.ok && data.profile) {
         setLocalStudents((prev) =>
           prev.map((s) =>
             s.id === data.profile!.id
-              ? {
-                  ...s,
-                  balance: data.profile!.balance,
-                  account_type: data.profile!.accountType ?? s.account_type ?? "STUDENT"
-                }
+              ? { ...s, balance: data.profile!.balance }
               : s
           )
         );
         setSelectedStudent({
           id: data.profile.id,
           name: data.profile.name,
-          balance: data.profile.balance,
-          account_type: data.profile.accountType ?? "STUDENT"
+          balance: data.profile.balance
         });
-        if ((data.profile.accountType ?? "STUDENT") === "CORPORATION") {
-          void loadCorporationShares(data.profile.id);
-        } else {
-          setHoldings([]);
-        }
         setPasswordModalStudent(null);
         setPasswordInput("");
         showToast(`${data.profile.name}님, 환영합니다!`, "success");
@@ -160,15 +155,9 @@ export default function StudentGrid({
 
   const maxOnceThisTransfer = useMemo(() => {
     if (!selectedStudent) return 0;
-    if ((selectedStudent.account_type ?? "STUDENT") === "CORPORATION") return selectedStudent.balance;
     if (fairMode) return selectedStudent.balance;
-    const p2p = Boolean(toRecipient && !toRecipient.startsWith(GOAL_PREFIX));
-    if (p2p) {
-      const to = localStudents.find((s) => s.id === toRecipient);
-      if ((to?.account_type ?? "STUDENT") === "CORPORATION") return selectedStudent.balance;
-    }
     return maxAmountPerTransfer(selectedStudent.balance, dp);
-  }, [selectedStudent, toRecipient, fairMode, dp, localStudents]);
+  }, [selectedStudent, fairMode, dp]);
 
   const selectedGoalNeeded = useMemo(() => {
     if (!isGoalRecipient) return null;
@@ -184,68 +173,6 @@ export default function StudentGrid({
     setTimeout(() => {
       setToast(null);
     }, 5000);
-  }
-
-  async function loadCorporationShares(corporationId: string) {
-    try {
-      const res = await fetch(`/api/corporations/${corporationId}/shares`);
-      const data = (await res.json()) as {
-        ok: boolean;
-        holdings?: Array<{ studentId: string; studentName: string; shareCount: number }>;
-      };
-      if (data.ok) setHoldings(data.holdings ?? []);
-      else setHoldings([]);
-    } catch {
-      setHoldings([]);
-    }
-  }
-
-  async function handleDividend() {
-    if (!selectedStudent || !selectedIsCorporation) return;
-    const amountNum = roundToDecimalPlaces(Number(dividendAmount), dp);
-    if (!Number.isFinite(amountNum) || amountNum <= 0) {
-      showToast("총 배당 금액을 정확히 입력해주세요.", "error");
-      return;
-    }
-    if (dividendReason.trim().length < 10) {
-      showToast("배당 사유를 10자 이상 입력해주세요.", "error");
-      return;
-    }
-    setIsDividendSubmitting(true);
-    try {
-      const res = await fetch("/api/corporations/dividend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          corporationId: selectedStudent.id,
-          totalAmount: amountNum,
-          message: dividendReason.trim()
-        })
-      });
-      const data = (await res.json()) as { ok: boolean; message?: string; remainingBalance?: number };
-      if (!res.ok || !data.ok) {
-        showToast(data.message ?? "배당 실행에 실패했습니다.", "error");
-        return;
-      }
-      setLocalStudents((prev) =>
-        prev.map((s) =>
-          s.id === selectedStudent.id
-            ? { ...s, balance: data.remainingBalance ?? s.balance }
-            : s
-        )
-      );
-      setSelectedStudent((prev) =>
-        prev ? { ...prev, balance: data.remainingBalance ?? prev.balance } : prev
-      );
-      setDividendAmount("");
-      setDividendReason("");
-      showToast(data.message ?? "배당이 완료되었습니다.", "success");
-      router.refresh();
-    } catch {
-      showToast("배당 요청 중 오류가 발생했습니다.", "error");
-    } finally {
-      setIsDividendSubmitting(false);
-    }
   }
 
   async function handleTransfer() {
@@ -265,10 +192,7 @@ export default function StudentGrid({
 
     const isGoal = toRecipient.startsWith(GOAL_PREFIX);
     const isVault = toRecipient === VAULT_RECIPIENT;
-    const isCorpSender = (sender.account_type ?? "STUDENT") === "CORPORATION";
-    const toProfile = !isGoal && !isVault ? localStudents.find((s) => s.id === toRecipient) : null;
-    const isCorpReceiver = (toProfile?.account_type ?? "STUDENT") === "CORPORATION";
-    const maxOnce = isCorpSender || isCorpReceiver || fairMode
+    const maxOnce = fairMode
       ? sender.balance
       : maxAmountPerTransfer(sender.balance, dp);
     if (transferAmount > maxOnce + 1e-9) {
@@ -283,12 +207,29 @@ export default function StudentGrid({
     const toGoalId = isGoal ? toRecipient.slice(GOAL_PREFIX.length) : null;
     const toStudentId = isGoal || isVault ? null : toRecipient;
 
-    if (praiseMessage.trim().length < 10) {
-      showToast("송금/기부 메시지를 10자 이상 입력해주세요.", "error");
-      return;
+    const praiseForSend = praiseMessage.trim();
+    if (isGoal || isVault) {
+      if (praiseForSend.length < FUNDING_OR_VAULT_NOTE_MIN_LENGTH) {
+        showToast(
+          `송금 사유를 ${FUNDING_OR_VAULT_NOTE_MIN_LENGTH}자 이상 입력해주세요.`,
+          "error"
+        );
+        return;
+      }
+    } else {
+      if (!praiseReason) {
+        showToast("칭찬 사유를 선택해주세요.", "error");
+        return;
+      }
+      if (praiseForSend.length < P2P_PRAISE_NOTE_MIN_LENGTH) {
+        showToast(
+          `짧은 한마디를 ${P2P_PRAISE_NOTE_MIN_LENGTH}자 이상 입력해주세요.`,
+          "error"
+        );
+        return;
+      }
     }
 
-    const praiseForSend = praiseMessage.trim();
     setIsSubmitting(true);
 
     try {
@@ -299,13 +240,12 @@ export default function StudentGrid({
       if (toGoalId) {
         body.toGoalId = toGoalId;
         body.praiseMessage = praiseForSend;
-      }
-      else if (isVault) {
+      } else if (isVault) {
         body.toVault = true;
         body.praiseMessage = praiseForSend;
-      }
-      else {
+      } else {
         body.toStudentId = toStudentId;
+        body.praiseReason = praiseReason;
         body.praiseMessage = praiseForSend;
       }
 
@@ -352,6 +292,7 @@ export default function StudentGrid({
       setToRecipient("");
       setAmount("");
       setPraiseMessage("");
+      setPraiseReason("");
       showToast(
         `${result.message ?? ""}${
           result.txRecorded === false && result.txError
@@ -370,57 +311,38 @@ export default function StudentGrid({
 
   return (
     <>
-      <section className="mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-white md:text-2xl">학생 지갑 보드</h2>
-          <p className="mt-1 text-sm text-gray-400">{subtitle}</p>
-          <p className="mt-1 text-xs text-gray-500">본인 이름을 누르고 4자리 비밀번호를 입력하세요.</p>
-        </div>
-      </section>
-
-      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {localStudents.map((student) => (
-          <button
-            key={student.id}
-            type="button"
-            onClick={() => setPasswordModalStudent(student)}
-            className={`flex items-center justify-between gap-3 rounded-lg px-4 py-3 text-left shadow transition focus-visible:outline-none focus-visible:ring-2 ${
-              (student.account_type ?? "STUDENT") === "CORPORATION"
-                ? "border border-emerald-400/60 bg-emerald-950/35 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_0_14px_rgba(16,185,129,0.28)] focus-visible:ring-emerald-400"
-                : "border border-white/10 bg-slate-900/70 hover:-translate-y-0.5 hover:border-orange-400/60 hover:shadow-[0_0_12px_rgba(247,147,26,0.2)] focus-visible:ring-orange-400"
-            }`}
-          >
-            <span className="truncate font-semibold text-white">
-              {student.name}
-              {(student.account_type ?? "STUDENT") === "CORPORATION" && (
-                <span className="ml-2 rounded border border-emerald-400/50 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-300">
-                  CORP
+      <SectionCollapsible
+        title="학생 지갑 보드"
+        description={`${subtitle} · 본인 이름을 누르고 비밀번호를 입력하세요`}
+        className="mb-8 rounded-[2rem] border border-[#d7efe2] bg-white/90 p-5 shadow-[0_8px_24px_rgba(47,191,113,0.06)] md:p-6"
+      >
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {localStudents.map((student) => (
+            <button
+              key={student.id}
+              type="button"
+              onClick={() => setPasswordModalStudent(student)}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-[#d7efe2] bg-white px-4 py-3 text-left shadow-[0_6px_18px_rgba(47,191,113,0.08)] transition hover:-translate-y-0.5 hover:border-[#2fbf71] hover:shadow-[0_10px_24px_rgba(47,191,113,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2fbf71]"
+            >
+              <span className="truncate font-semibold text-[#1f3d32]">{student.name}</span>
+              <span className="shrink-0 text-right">
+                <span className="block text-[10px] text-[#9bb5a8]">현재 잔액</span>
+                <span className="font-bold text-[#2fbf71]">
+                  {fc(student.balance)} {CURRENCY}
                 </span>
-              )}
-            </span>
-            <span className="shrink-0 text-right">
-              <span className="block text-[10px] text-gray-500">현재 잔액</span>
-              <span
-                className={`font-bold ${
-                  (student.account_type ?? "STUDENT") === "CORPORATION"
-                    ? "text-emerald-300"
-                    : "text-orange-400"
-                }`}
-              >
-                {fc(student.balance)} {CURRENCY}
               </span>
-            </span>
-          </button>
-        ))}
-      </section>
+            </button>
+          ))}
+        </section>
+      </SectionCollapsible>
 
       {toast ? (
         <div className="fixed right-5 top-5 z-[60]">
           <section
-            className={`rounded-lg px-4 py-3 text-sm shadow-lg ${
+            className={`rounded-2xl px-4 py-3 text-sm shadow-lg ${
               toast.tone === "success"
-                ? "border border-orange-400/40 bg-slate-900 text-orange-200"
-                : "border border-red-500/50 bg-red-950/90 text-red-200"
+                ? "border border-[#b9ebcf] bg-white text-[#1f7a4a]"
+                : "border border-red-200 bg-red-50 text-red-700"
             }`}
           >
             {toast.text}
@@ -429,11 +351,11 @@ export default function StudentGrid({
       ) : null}
 
       {passwordModalStudent ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-orange-400/40 bg-slate-900 p-6">
-            <p className="text-xs uppercase tracking-[0.2em] text-orange-300">로그인</p>
-            <h3 className="mt-2 text-xl font-bold text-white">{passwordModalStudent.name}</h3>
-            <p className="mt-2 text-sm text-gray-400">4자리 비밀번호를 입력하세요.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1f3d32]/35 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-[#d7efe2] bg-white p-6 shadow-xl">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#2fbf71]">로그인</p>
+            <h3 className="mt-2 text-xl font-bold text-[#1f3d32]">{passwordModalStudent.name}</h3>
+            <p className="mt-2 text-sm text-[#5d7a6c]">4자리 비밀번호를 입력하세요.</p>
             <input
               type="password"
               inputMode="numeric"
@@ -443,7 +365,7 @@ export default function StudentGrid({
               onChange={(e) => setPasswordInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
               onKeyDown={(e) => e.key === "Enter" && handlePasswordVerify()}
               placeholder="0000"
-              className="mt-4 w-full rounded-md border border-white/20 bg-slate-800 px-4 py-3 text-center text-lg tracking-[0.5em] text-white outline-none focus:border-orange-400"
+              className="mt-4 w-full rounded-xl border border-[#d7efe2] bg-[#f7fcf9] px-4 py-3 text-center text-lg tracking-[0.5em] text-[#1f3d32] outline-none focus:border-[#2fbf71]"
             />
             <div className="mt-6 flex gap-2">
               <button
@@ -452,7 +374,7 @@ export default function StudentGrid({
                   setPasswordModalStudent(null);
                   setPasswordInput("");
                 }}
-                className="flex-1 rounded-lg border border-white/20 px-4 py-2 text-sm text-gray-300"
+                className="flex-1 rounded-full border border-[#d7efe2] px-4 py-2 text-sm text-[#5d7a6c]"
               >
                 취소
               </button>
@@ -460,7 +382,7 @@ export default function StudentGrid({
                 type="button"
                 onClick={handlePasswordVerify}
                 disabled={passwordVerifying || passwordInput.length !== 4}
-                className="flex-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-50"
+                className="flex-1 rounded-full bg-[#2fbf71] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {passwordVerifying ? "확인 중..." : "입장"}
               </button>
@@ -470,84 +392,38 @@ export default function StudentGrid({
       ) : null}
 
       {selectedStudent ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl border border-orange-400/40 bg-slate-900 p-6 shadow-[0_0_32px_rgba(247,147,26,0.2)]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1f3d32]/35 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-3xl border border-[#d7efe2] bg-white p-6 shadow-xl">
             <div className="overflow-y-auto pr-1">
-            <p className="text-xs uppercase tracking-[0.2em] text-orange-300">Wallet Menu</p>
-            <h3 className="mt-2 text-2xl font-extrabold text-white">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#2fbf71]">Wallet Menu</p>
+            <h3 className="mt-2 text-2xl font-extrabold text-[#1f3d32]">
               {selectedStudent.name}
             </h3>
-            <p className="mt-2 text-sm text-gray-300">
+            <p className="mt-2 text-sm text-[#5d7a6c]">
               현재 잔액:{" "}
-              <span className="font-bold text-orange-400">
+              <span className="font-bold text-[#2fbf71]">
                 {fc(selectedStudent.balance)} {CURRENCY}
               </span>
             </p>
-            {selectedIsCorporation && (
-              <p className="mt-1 text-xs text-emerald-300">
-                법인 계정: 송금 10% 제한 없이 거래할 수 있습니다.
-              </p>
-            )}
 
             <div className="mt-6 grid gap-3">
-              {selectedIsCorporation && (
-                <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 p-3">
-                  <p className="text-sm font-semibold text-emerald-300">지분 배당 실행</p>
-                  <p className="mt-1 text-xs text-gray-300">
-                    총 배당금 전액이 10주 지분대로 분배됩니다. (배당 세금 없음)
-                  </p>
-                  {holdings.some((h) => h.shareCount > 0) && (
-                    <p className="mt-1 text-xs text-gray-400">
-                      {holdings
-                        .filter((h) => h.shareCount > 0)
-                        .map((h) => `${h.studentName} ${h.shareCount}주`)
-                        .join(" · ")}
-                    </p>
-                  )}
-                  <input
-                    type="number"
-                    min={dp === 0 ? 1 : 0.01}
-                    step={amountInputStep(dp)}
-                    value={dividendAmount}
-                    onChange={(e) => setDividendAmount(e.target.value)}
-                    className="mt-2 w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white"
-                    placeholder="총 배당 금액"
-                  />
-                  <textarea
-                    value={dividendReason}
-                    onChange={(e) => setDividendReason(e.target.value)}
-                    rows={2}
-                    maxLength={200}
-                    className="mt-2 w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white"
-                    placeholder="배당 사유(10자 이상)"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleDividend}
-                    disabled={isDividendSubmitting || !timeLockResult.allowed}
-                    className="mt-2 w-full rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
-                  >
-                    {isDividendSubmitting ? "배당 처리 중..." : "배당 실행"}
-                  </button>
-                </div>
-              )}
               {!transferHoursEnforced && (
-                <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">
+                <div className="rounded-2xl border border-[#b9ebcf] bg-[#dff8ea] px-4 py-3 text-sm text-[#1f7a4a]">
                   송금 시간 제한이 꺼져 있어 평일 시간과 관계없이 송금·기부할 수 있어요.
                 </div>
               )}
               {transferHoursEnforced && !timeLockResult.allowed && (
-                <div className="rounded-lg border border-amber-500/50 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+                <div className="rounded-2xl border border-[#ffe0d4] bg-[#fff4f0] px-4 py-3 text-sm text-[#7a5345]">
                   ⏰ {getTimeLockMessage(timeLockResult)}
                 </div>
               )}
-              <div className="rounded-lg border border-white/10 bg-slate-800/80 p-3">
-                <p className="mb-2 text-sm font-semibold text-orange-300">송금/기부하기</p>
-                <label className="mb-2 block text-xs text-gray-400">받는 대상</label>
+              <div className="rounded-2xl border border-[#e8f4ee] bg-[#f7fcf9] p-3">
+                <p className="mb-2 text-sm font-semibold text-[#2fbf71]">송금/기부하기</p>
+                <label className="mb-2 block text-xs text-[#5d7a6c]">받는 대상</label>
                 <select
                   value={toRecipient}
                   onChange={(event) => setToRecipient(event.target.value)}
-                  className="mb-3 w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400"
+                  className="mb-3 w-full rounded-xl border border-[#d7efe2] bg-white px-3 py-2 text-sm text-[#1f3d32] outline-none focus:border-[#2fbf71]"
                 >
                   <option value="">학생/중앙 금고/펀딩 목표 선택</option>
                   {recipientOptions.map((opt) => (
@@ -566,37 +442,77 @@ export default function StudentGrid({
                   ))}
                 </select>
 
-                {showMessageInput && (
+                {showMessageInput && isP2PToStudent && (
                   <>
-                    <label className="mb-2 block text-xs text-gray-400">
-                      {isP2PToStudent ? (
-                        <>
-                          칭찬 메시지 <span className="text-orange-400">(10자 이상 필수)</span>
-                        </>
-                      ) : (
-                        <>송금 사유 <span className="text-orange-400">(10자 이상 필수)</span></>
-                      )}
+                    <p className="mb-2 text-xs text-[#5d7a6c]">
+                      칭찬 사유 <span className="text-[#ff7a59]">(필수 · 하나 선택)</span>
+                    </p>
+                    <div className="mb-3 space-y-2">
+                      {P2P_PRAISE_REASONS.map((reason) => (
+                        <label
+                          key={reason}
+                          className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-sm transition ${
+                            praiseReason === reason
+                              ? "border-[#2fbf71] bg-[#dff8ea] text-[#1f3d32]"
+                              : "border-[#d7efe2] bg-white text-[#1f3d32] hover:border-[#2fbf71]"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="praiseReason"
+                            value={reason}
+                            checked={praiseReason === reason}
+                            onChange={() => setPraiseReason(reason)}
+                            className="mt-0.5"
+                          />
+                          <span>{reason}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <label className="mb-2 block text-xs text-[#5d7a6c]">
+                      짧은 한마디{" "}
+                      <span className="text-[#ff7a59]">
+                        ({P2P_PRAISE_NOTE_MIN_LENGTH}자 이상 필수)
+                      </span>
                     </label>
                     <textarea
                       value={praiseMessage}
                       onChange={(e) => setPraiseMessage(e.target.value)}
-                      placeholder={
-                        isP2PToStudent
-                          ? "예: 친구가 발표할 때 열심히 듣는 모습이 멋져요!"
-                          : "예: 학급 운영비 납부"
-                      }
+                      placeholder="예: 청소 도와줘서 고마워!"
                       rows={2}
                       maxLength={200}
-                      className="mb-3 w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-orange-400"
+                      className="mb-3 w-full rounded-xl border border-[#d7efe2] bg-white px-3 py-2 text-sm text-[#1f3d32] outline-none placeholder:text-[#9bb5a8] focus:border-[#2fbf71]"
                     />
-                    {isP2PToStudent && praiseMessage.length > 0 && praiseMessage.length < 10 && (
-                      <p className="mb-2 text-xs text-amber-400">아직 {10 - praiseMessage.length}자 더 입력해주세요.</p>
-                    )}
+                    {praiseMessage.length > 0 &&
+                      praiseMessage.length < P2P_PRAISE_NOTE_MIN_LENGTH && (
+                        <p className="mb-2 text-xs text-[#ff7a59]">
+                          아직 {P2P_PRAISE_NOTE_MIN_LENGTH - praiseMessage.length}자 더
+                          입력해주세요.
+                        </p>
+                      )}
                   </>
                 )}
-                <label className="mb-2 block text-xs text-gray-400">송금 금액 ({CURRENCY})</label>
+                {showMessageInput && !isP2PToStudent && (
+                  <>
+                    <label className="mb-2 block text-xs text-[#5d7a6c]">
+                      송금 사유{" "}
+                      <span className="text-[#ff7a59]">
+                        ({FUNDING_OR_VAULT_NOTE_MIN_LENGTH}자 이상 필수)
+                      </span>
+                    </label>
+                    <textarea
+                      value={praiseMessage}
+                      onChange={(e) => setPraiseMessage(e.target.value)}
+                      placeholder="예: 학급 운영비 납부"
+                      rows={2}
+                      maxLength={200}
+                      className="mb-3 w-full rounded-xl border border-[#d7efe2] bg-white px-3 py-2 text-sm text-[#1f3d32] outline-none placeholder:text-[#9bb5a8] focus:border-[#2fbf71]"
+                    />
+                  </>
+                )}
+                <label className="mb-2 block text-xs text-[#5d7a6c]">송금 금액 ({CURRENCY})</label>
                 {selectedGoalNeeded != null ? (
-                  <p className="mb-1.5 text-xs text-orange-300/90">
+                  <p className="mb-1.5 text-xs text-[#2fbf71]">
                     남은 필요액: {fc(selectedGoalNeeded)} {CURRENCY} (목표 초과분은 중앙 금고로)
                   </p>
                 ) : null}
@@ -606,13 +522,13 @@ export default function StudentGrid({
                   step={amountInputStep(dp)}
                   value={amount}
                   onChange={(event) => setAmount(event.target.value)}
-                  className="w-full rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-400"
+                  className="w-full rounded-xl border border-[#d7efe2] bg-white px-3 py-2 text-sm text-[#1f3d32] outline-none focus:border-[#2fbf71]"
                   placeholder={dp === 0 ? "예: 100" : dp === 1 ? "예: 10.5" : "예: 1.25"}
                 />
                 {toRecipient ? (
-                  <p className="mt-2 text-xs text-gray-400">
+                  <p className="mt-2 text-xs text-[#5d7a6c]">
                     한 번에 보낼 수 있는 최대:{" "}
-                    <span className="font-medium text-orange-300/90">
+                    <span className="font-medium text-[#2fbf71]">
                       {fc(maxOnceThisTransfer)} {CURRENCY}
                     </span>
                     {fairMode ? (
@@ -624,7 +540,7 @@ export default function StudentGrid({
                       </span>
                     )}
                     {maxOnceThisTransfer < (dp === 0 ? 1 : 0.01) && (
-                      <span className="ml-1 text-amber-400">
+                      <span className="ml-1 text-[#ff7a59]">
                         · 잔액이 적어 지금은 송금할 수 없어요
                       </span>
                     )}
@@ -634,7 +550,7 @@ export default function StudentGrid({
                   type="button"
                   onClick={handleTransfer}
                   disabled={isSubmitting || !timeLockResult.allowed}
-                  className="mt-3 w-full rounded-lg bg-orange-500 px-4 py-3 text-sm font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="mt-3 w-full rounded-full bg-[#ff7a59] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#ff6a45] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSubmitting ? "송금 중..." : timeLockResult.allowed ? "송금 실행" : "영업 시간 아님"}
                 </button>
@@ -647,7 +563,7 @@ export default function StudentGrid({
                     "success"
                   )
                 }
-                className="rounded-lg border border-white/20 bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition hover:border-orange-400/60"
+                className="rounded-2xl border border-[#d7efe2] bg-white px-4 py-3 text-sm font-semibold text-[#1f3d32] transition hover:border-[#2fbf71]"
               >
                 잔액 확인
               </button>
@@ -661,11 +577,8 @@ export default function StudentGrid({
                 setToRecipient("");
                 setAmount("");
                 setPraiseMessage("");
-                setDividendAmount("");
-                setDividendReason("");
-                setHoldings([]);
               }}
-              className="mt-5 w-full rounded-lg border border-white/20 px-4 py-2 text-sm text-gray-300 transition hover:border-white/40 hover:text-white"
+              className="mt-5 w-full rounded-full border border-[#d7efe2] px-4 py-2 text-sm text-[#5d7a6c] transition hover:border-[#2fbf71] hover:text-[#1f3d32]"
             >
               닫기
             </button>

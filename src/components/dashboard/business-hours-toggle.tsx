@@ -13,7 +13,6 @@ export default function BusinessHoursToggle({ transferHoursEnforced }: BusinessH
   const router = useRouter();
   const { token } = useAdmin();
   const [isUpdating, setIsUpdating] = useState(false);
-  /** 서버 반영 전에도 스위치가 바로 움직이도록 로컬 상태 사용 */
   const [on, setOn] = useState(transferHoursEnforced);
 
   useEffect(() => {
@@ -49,8 +48,8 @@ export default function BusinessHoursToggle({ transferHoursEnforced }: BusinessH
   }
 
   return (
-    <section className="mb-6 rounded-xl border border-orange-400/30 bg-slate-900/70 p-4">
-      <h3 className="mb-3 text-sm font-bold text-orange-300">영업시간 (송금)</h3>
+    <div className="rounded-2xl border border-[#e8f4ee] bg-[#f7fcf9] p-4">
+      <h3 className="mb-3 text-sm font-bold text-[#2fbf71]">영업시간 (송금)</h3>
       <div className="flex flex-wrap items-center gap-4">
         <button
           type="button"
@@ -59,7 +58,7 @@ export default function BusinessHoursToggle({ transferHoursEnforced }: BusinessH
           role="switch"
           aria-checked={on}
           className={`relative inline-flex h-8 w-[3.5rem] shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-            on ? "bg-green-500" : "bg-slate-600"
+            on ? "bg-[#2fbf71]" : "bg-[#c9d9d0]"
           }`}
         >
           <span
@@ -70,20 +69,19 @@ export default function BusinessHoursToggle({ transferHoursEnforced }: BusinessH
           />
         </button>
         <div>
-          <span className="text-sm font-medium text-white">
+          <span className="text-sm font-medium text-[#1f3d32]">
             평일 송금 시간 제한: {on ? "ON" : "OFF"}
           </span>
-          <span className="ml-2 text-sm text-gray-400">
+          <span className="ml-2 text-sm text-[#5d7a6c]">
             ({on ? "08:30~15:30만 송금" : "시간 제한 없음"})
           </span>
         </div>
-        {isUpdating && (
-          <span className="text-xs text-orange-300">변경 중...</span>
-        )}
-        <p className="w-full text-xs text-gray-500">
-          ON이면 평일(월~금) 08:30~15:30(KST)에만 송금·기부가 가능합니다. OFF면 수업·행사 중에도 제한 없이 송금할 수 있습니다.
+        {isUpdating && <span className="text-xs text-[#2fbf71]">변경 중...</span>}
+        <p className="w-full text-xs text-[#5d7a6c]">
+          ON이면 평일(월~금) 08:30~15:30(KST)에만 송금·기부가 가능합니다. OFF면 수업·행사 중에도 제한
+          없이 송금할 수 있습니다.
         </p>
       </div>
-    </section>
+    </div>
   );
 }

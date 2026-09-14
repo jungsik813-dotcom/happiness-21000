@@ -100,7 +100,7 @@ export default function VaultTransfer({
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="flex w-full items-center justify-between text-left text-sm font-bold text-[#2fbf71] hover:text-[#1f7a4a]"
+          className="ui-expand-trigger -mx-1 flex w-full items-center justify-between px-2 py-1 text-left text-sm font-bold text-[#2fbf71] hover:text-[#1f7a4a]"
         >
           중앙 금고 송금하기 {expanded ? "▲" : "▼"}
         </button>

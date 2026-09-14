@@ -122,6 +122,30 @@ a {
   color: var(--muted);
 }
 
+/* 펼치기·접기 헤더: 호버 시 클릭 가능함을 표시 */
+.ui-expand-trigger {
+  cursor: pointer;
+  border-radius: 1rem;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.ui-expand-trigger:hover {
+  background-color: #f0faf4;
+}
+
+.ui-expand-trigger:hover .ui-expand-hint {
+  color: var(--accent);
+}
+
+.ui-switch:hover:not(:disabled) {
+  filter: brightness(0.96);
+  box-shadow: 0 0 0 3px rgba(47, 191, 113, 0.22);
+}
+
 .guide-content h3 {
   margin: 0 0 0.75rem;
   font-size: 1.125rem;

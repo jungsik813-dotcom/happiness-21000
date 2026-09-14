@@ -30,7 +30,7 @@ export default function SectionCollapsible({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left"
+          className="ui-expand-trigger flex min-w-0 flex-1 items-start justify-between gap-3 px-2 py-1 text-left"
           aria-expanded={open}
         >
           <div className="min-w-0">
@@ -42,7 +42,7 @@ export default function SectionCollapsible({
             </h2>
             {description ? <p className="mt-1 text-sm text-[#5d7a6c]">{description}</p> : null}
           </div>
-          <span className="shrink-0 pt-1 text-sm font-semibold text-[#9bb5a8]">
+          <span className="ui-expand-hint shrink-0 pt-1 text-sm font-semibold text-[#9bb5a8]">
             {open ? "접기 ▲" : "펼치기 ▼"}
           </span>
         </button>

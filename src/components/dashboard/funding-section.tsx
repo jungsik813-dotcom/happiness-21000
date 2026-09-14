@@ -213,10 +213,10 @@ export default function FundingSection({
             <button
               type="button"
               onClick={() => setShowCompleted((v) => !v)}
-              className="flex w-full items-center justify-between rounded-2xl border border-[#d7efe2] bg-white px-4 py-3 text-left text-sm font-bold text-[#1f3d32] shadow-sm transition hover:border-[#2fbf71]"
+              className="ui-expand-trigger flex w-full items-center justify-between rounded-2xl border border-[#d7efe2] bg-white px-4 py-3 text-left text-sm font-bold text-[#1f3d32] shadow-sm hover:border-[#2fbf71]"
             >
               <span>완료된 펀딩 ({completedGoals.length})</span>
-              <span className="text-[#9bb5a8]">{showCompleted ? "접기 ▲" : "펼치기 ▼"}</span>
+              <span className="ui-expand-hint text-[#9bb5a8]">{showCompleted ? "접기 ▲" : "펼치기 ▼"}</span>
             </button>
             {showCompleted && (
               <div className="grid gap-4 sm:grid-cols-2">
@@ -271,13 +271,13 @@ function ActiveGoalCard({
         <button
           type="button"
           onClick={() => setShowContributors(!showContributors)}
-          className="flex w-full items-center justify-between text-left text-xs font-bold text-[#2fbf71]"
+          className="ui-expand-trigger -mx-1 flex w-full items-center justify-between px-2 py-1 text-left text-xs font-bold text-[#2fbf71]"
         >
           기부 랭킹
           {contributions?.byPerson?.length
             ? contributorRankButtonSuffix(contributions.byPerson.length, ADMIN_RANK_ROWS)
             : ""}
-          <span className="text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
+          <span className="ui-expand-hint text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
         </button>
         {showContributors && contributions ? (
           <ContributionRankList
@@ -331,13 +331,13 @@ function CompletedGoalCard({
         <button
           type="button"
           onClick={() => setShowContributors(!showContributors)}
-          className="flex w-full items-center justify-between text-left text-xs font-bold text-[#5d7a6c]"
+          className="ui-expand-trigger -mx-1 flex w-full items-center justify-between px-2 py-1 text-left text-xs font-bold text-[#5d7a6c]"
         >
           기부 랭킹 (전체)
           {contributions?.byPerson?.length
             ? contributorRankButtonSuffix(contributions.byPerson.length, ADMIN_RANK_ROWS)
             : ""}
-          <span className="text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
+          <span className="ui-expand-hint text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
         </button>
         {showContributors ? (
           contributions ? (

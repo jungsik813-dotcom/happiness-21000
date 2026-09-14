@@ -37,7 +37,6 @@ export default function FundingGoalsDisplay({
   burnedByGoal = {},
   decimalPlaces = 0
 }: FundingGoalsDisplayProps) {
-  const [showCompleted, setShowCompleted] = useState(false);
   const activeGoals = sortGoalsByStudentContributionTotal(
     goals.filter((g) => g.is_active),
     contributions
@@ -77,41 +76,23 @@ export default function FundingGoalsDisplay({
       </SectionCollapsible>
 
       {completedGoals.length > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowCompleted((v) => !v)}
-            className="flex w-full items-center justify-between rounded-[2rem] border border-[#d7efe2] bg-white/90 px-5 py-4 text-left shadow-[0_8px_24px_rgba(47,191,113,0.06)] transition hover:border-[#2fbf71]"
-          >
-            <span>
-              <span
-                className="block text-xl font-semibold text-[#1f3d32]"
-                style={{ fontFamily: "var(--font-fredoka), sans-serif" }}
-              >
-                완료된 펀딩
-              </span>
-              <span className="mt-1 block text-sm text-[#5d7a6c]">
-                {completedGoals.length}개 · 필요할 때만 펼쳐 보세요
-              </span>
-            </span>
-            <span className="shrink-0 text-sm font-semibold text-[#9bb5a8]">
-              {showCompleted ? "접기 ▲" : "펼치기 ▼"}
-            </span>
-          </button>
-          {showCompleted && (
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              {completedGoals.map((goal) => (
-                <CompletedGoalCard
-                  key={goal.id}
-                  goal={goal}
-                  contributions={contributions[goal.id]}
-                  burnedAmount={burnedByGoal[goal.id]}
-                  decimalPlaces={decimalPlaces}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        <SectionCollapsible
+          title="완료된 펀딩"
+          description={`${completedGoals.length}개 · 필요할 때만 펼쳐 보세요`}
+          className="rounded-[2rem] border border-[#d7efe2] bg-white/90 p-5 shadow-[0_8px_24px_rgba(47,191,113,0.06)] md:p-6"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            {completedGoals.map((goal) => (
+              <CompletedGoalCard
+                key={goal.id}
+                goal={goal}
+                contributions={contributions[goal.id]}
+                burnedAmount={burnedByGoal[goal.id]}
+                decimalPlaces={decimalPlaces}
+              />
+            ))}
+          </div>
+        </SectionCollapsible>
       )}
     </div>
   );
@@ -150,13 +131,13 @@ function ActiveGoalCard({
         <button
           type="button"
           onClick={() => setShowContributors(!showContributors)}
-          className="flex w-full items-center justify-between text-left text-xs font-bold text-[#2fbf71] hover:text-[#1f7a4a]"
+          className="ui-expand-trigger -mx-1 flex w-full items-center justify-between px-2 py-1 text-left text-xs font-bold text-[#2fbf71] hover:text-[#1f7a4a]"
         >
           기부 랭킹
           {contributions?.byPerson?.length
             ? contributorRankButtonSuffix(contributions.byPerson.length)
             : ""}
-          <span className="text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
+          <span className="ui-expand-hint text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
         </button>
         {showContributors && contributions ? (
           <ContributionRankList
@@ -209,13 +190,13 @@ function CompletedGoalCard({
         <button
           type="button"
           onClick={() => setShowContributors(!showContributors)}
-          className="flex w-full items-center justify-between text-left text-xs font-bold text-[#5d7a6c] hover:text-[#1f3d32]"
+          className="ui-expand-trigger -mx-1 flex w-full items-center justify-between px-2 py-1 text-left text-xs font-bold text-[#5d7a6c] hover:text-[#1f3d32]"
         >
           기부 랭킹 (상위 10명)
           {contributions?.byPerson?.length
             ? contributorRankButtonSuffix(contributions.byPerson.length)
             : ""}
-          <span className="text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
+          <span className="ui-expand-hint text-[#9bb5a8]">{showContributors ? "▲" : "▼"}</span>
         </button>
         {showContributors ? (
           contributions ? (

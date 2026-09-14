@@ -322,7 +322,7 @@ export default function StudentGrid({
               key={student.id}
               type="button"
               onClick={() => setPasswordModalStudent(student)}
-              className="flex items-center justify-between gap-3 rounded-2xl border border-[#d7efe2] bg-white px-4 py-3 text-left shadow-[0_6px_18px_rgba(47,191,113,0.08)] transition hover:-translate-y-0.5 hover:border-[#2fbf71] hover:shadow-[0_10px_24px_rgba(47,191,113,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2fbf71]"
+              className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-[#d7efe2] bg-white px-4 py-3 text-left shadow-[0_6px_18px_rgba(47,191,113,0.08)] transition hover:-translate-y-0.5 hover:border-[#2fbf71] hover:shadow-[0_10px_24px_rgba(47,191,113,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2fbf71]"
             >
               <span className="truncate font-semibold text-[#1f3d32]">{student.name}</span>
               <span className="shrink-0 text-right">

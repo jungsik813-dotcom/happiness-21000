@@ -57,7 +57,7 @@ export default function BusinessHoursToggle({ transferHoursEnforced }: BusinessH
           disabled={isUpdating}
           role="switch"
           aria-checked={on}
-          className={`relative inline-flex h-8 w-[3.5rem] shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          className={`ui-switch relative inline-flex h-8 w-[3.5rem] shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             on ? "bg-[#2fbf71]" : "bg-[#c9d9d0]"
           }`}
         >

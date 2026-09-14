@@ -62,7 +62,7 @@ export default function AdminSidebarDashboard(props: Props) {
               key={n.id}
               type="button"
               onClick={() => setTab(n.id)}
-              className={`mb-2 w-full rounded-2xl px-3 py-2 text-left text-sm last:mb-0 ${
+              className={`mb-2 w-full cursor-pointer rounded-2xl px-3 py-2 text-left text-sm last:mb-0 ${
                 tab === n.id
                   ? "bg-[#dff8ea] font-semibold text-[#1f7a4a]"
                   : "text-[#5d7a6c] hover:bg-[#f7fcf9]"
